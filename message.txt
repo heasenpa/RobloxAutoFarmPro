@@ -1,19 +1,12 @@
---[[ 
-    Auto Farm Fix V2 - by ChatGPT
-    - Farm mượt, không delay, giữ mục tiêu ổn định
-    - NoClip xuyên tường
-    - firetouchinterest nhặt chắc chắn
-    - In tên item khi xuất hiện
-    - HUD + Anti-AFK
-    - Bật/Tắt bằng phím G
-]]
+-- Auto Farm Mobile HUD - by ChatGPT
+-- Hiển thị tên item trên màn hình (hỗ trợ điện thoại)
 
 --===== CẤU HÌNH =====--
-local NameKeys = {"coin", "beachball"} -- sửa thành tên item bạn muốn farm
-local ScanRange = 200                  -- Tầm quét
-local FlySpeed = 80                    -- Tốc độ bay
-local PickupDist = 5                   -- Khoảng cách để nhặt
-local PickupHeight = 0.5                -- Bay cao hơn item một chút
+local NameKeys = {"coin", "beachball"} -- sửa thành item muốn farm
+local ScanRange = 200
+local FlySpeed = 80
+local PickupDist = 5
+local PickupHeight = 0.5
 
 --===== DỊCH VỤ =====--
 local Players = game:GetService("Players")
@@ -26,6 +19,8 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 
 --===== HUD =====--
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+
+-- Bảng trạng thái farm
 local label = Instance.new("TextLabel", gui)
 label.Size = UDim2.new(0, 260, 0, 50)
 label.Position = UDim2.new(0, 10, 0, 10)
@@ -34,6 +29,20 @@ label.BackgroundColor3 = Color3.new(0,0,0)
 label.TextColor3 = Color3.new(1,1,1)
 label.TextScaled = true
 label.Text = "Balls: 0 | Coins: 0 | Auto: ON"
+
+-- Bảng tên item
+local itemListLabel = Instance.new("TextLabel", gui)
+itemListLabel.Size = UDim2.new(0, 260, 0, 200)
+itemListLabel.Position = UDim2.new(0, 10, 0, 70)
+itemListLabel.BackgroundTransparency = 0.4
+itemListLabel.BackgroundColor3 = Color3.new(0,0,0)
+itemListLabel.TextColor3 = Color3.new(1,1,1)
+itemListLabel.TextScaled = false
+itemListLabel.TextWrapped = true
+itemListLabel.TextXAlignment = Enum.TextXAlignment.Left
+itemListLabel.TextYAlignment = Enum.TextYAlignment.Top
+itemListLabel.Font = Enum.Font.Code
+itemListLabel.Text = "Item list:"
 
 local autoFarm = true
 local ballCount, coinCount = 0, 0
@@ -48,7 +57,7 @@ end
 --===== NOCLIP =====--
 RunService.Stepped:Connect(function()
     if character and character:FindFirstChild("Humanoid") then
-        character.Humanoid:ChangeState(11) -- NoClip
+        character.Humanoid:ChangeState(11)
     end
 end)
 
@@ -57,6 +66,17 @@ local function updateHUD()
     label.Text = ("Balls: %d | Coins: %d | Auto: %s"):format(
         ballCount, coinCount, autoFarm and "ON" or "OFF"
     )
+end
+
+--===== CẬP NHẬT DANH SÁCH ITEM =====--
+local function updateItemList()
+    local names = {}
+    for _,obj in ipairs(items) do
+        if obj and obj.Parent then
+            table.insert(names, obj.Name)
+        end
+    end
+    itemListLabel.Text = "Item list:\n" .. table.concat(names, "\n")
 end
 
 --===== TÌM ITEM =====--
@@ -71,9 +91,9 @@ local function matchName(obj)
 end
 
 local function addItem(obj)
-    if obj:IsA("BasePart") and matchName(obj) then
-        print("[AutoFarm] Found item:", obj.Name)
+    if obj:IsA("BasePart") then
         table.insert(items, obj)
+        updateItemList()
         obj.AncestryChanged:Connect(function(_, parent)
             if not parent then
                 if obj.Name:lower():find("beachball") then
@@ -88,14 +108,12 @@ local function addItem(obj)
                         break
                     end
                 end
+                updateItemList()
                 if currentTarget == obj then
                     currentTarget = nil
                 end
             end
         end)
-    elseif obj:IsA("BasePart") then
-        -- In tên item lạ
-        print("[AutoFarm] Unknown item:", obj.Name)
     end
 end
 
@@ -108,7 +126,7 @@ Workspace.DescendantAdded:Connect(addItem)
 local function getClosest()
     local closest, dist
     for _, obj in ipairs(items) do
-        if obj and obj.Parent then
+        if obj and obj.Parent and matchName(obj) then
             local d = (hrp.Position - obj.Position).Magnitude
             if d <= ScanRange then
                 if not closest or d < dist then
