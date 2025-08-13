@@ -1,5 +1,5 @@
 -- MM2 Safe Auto Pickup Optimized
--- Ưu tiên BeachBall trước Coin, giảm lag tối đa
+-- Chỉ nhặt coin, xuyên tường (NoClip), giảm lag tối đa
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -25,33 +25,34 @@ counterLabel.BackgroundTransparency = 0.5
 counterLabel.BackgroundColor3 = Color3.new(0,0,0)
 counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
-counterLabel.Text = "Balls: 0 | Coins: 0"
+counterLabel.Text = "Coins: 0"
 
-local ballCount, coinCount = 0, 0
-
--- Lưu vật phẩm khi spawn
+local coinCount = 0
 local items = {}
-local function addItem(obj)
-    if obj:IsA("BasePart") then
-        local name = obj.Name:lower()
-        if name:find("beachball") or name:find("coin") then
-            table.insert(items, obj)
-            obj.AncestryChanged:Connect(function(_, parent)
-                if not parent then
-                    -- Khi vật phẩm biến mất
-                    if name:find("beachball") then
-                        ballCount += 1
-                    elseif name:find("coin") then
-                        coinCount += 1
-                    end
-                    counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
-                end
-            end)
+
+-- Thêm NoClip
+RunService.Stepped:Connect(function()
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
         end
+    end
+end)
+
+-- Lưu coin khi spawn
+local function addItem(obj)
+    if obj:IsA("BasePart") and obj.Name:lower():find("coin") then
+        table.insert(items, obj)
+        obj.AncestryChanged:Connect(function(_, parent)
+            if not parent then
+                coinCount += 1
+                counterLabel.Text = ("Coins: %d"):format(coinCount)
+            end
+        end)
     end
 end
 
--- Theo dõi vật phẩm mới spawn
+-- Theo dõi coin mới spawn
 Workspace.DescendantAdded:Connect(addItem)
 
 -- Quét ban đầu
@@ -59,14 +60,14 @@ for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
 
--- Tìm mục tiêu gần nhất (ưu tiên bóng)
+-- Tìm coin gần nhất
 local function getClosestItem()
     local closest, closestDist
     for _, obj in ipairs(items) do
         if obj and obj.Parent then
             local dist = (hrp.Position - obj.Position).Magnitude
             if dist <= scanRange then
-                if not closest or dist < closestDist or (closest.Name:lower():find("coin") and obj.Name:lower():find("beachball")) then
+                if not closest or dist < closestDist then
                     closest = obj
                     closestDist = dist
                 end
