@@ -1,168 +1,142 @@
--- Auto Farm Mobile HUD - by ChatGPT
--- Hiển thị tên item trên màn hình (hỗ trợ điện thoại)
+-- Auto Farm Fix V3 - Mobile Friendly
+-- By GPT
 
---===== CẤU HÌNH =====--
-local NameKeys = {"coin", "beachball"} -- sửa thành item muốn farm
-local ScanRange = 200
-local FlySpeed = 80
-local PickupDist = 5
-local PickupHeight = 0.5
-
---===== DỊCH VỤ =====--
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local UIS = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
---===== HUD =====--
-local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+-- ⚙️ Cấu hình
+local Config = {
+    ScanDelay = 0.15, -- Thời gian quét lại item
+    Speed = 50,       -- Tốc độ bay
+    PickupRange = 3,  -- Khoảng cách để nhặt
+    NameKeys = {"BeachBall", "Coin"} -- Tên item muốn farm
+}
 
--- Bảng trạng thái farm
-local label = Instance.new("TextLabel", gui)
-label.Size = UDim2.new(0, 260, 0, 50)
-label.Position = UDim2.new(0, 10, 0, 10)
-label.BackgroundTransparency = 0.4
-label.BackgroundColor3 = Color3.new(0,0,0)
-label.TextColor3 = Color3.new(1,1,1)
-label.TextScaled = true
-label.Text = "Balls: 0 | Coins: 0 | Auto: ON"
-
--- Bảng tên item
-local itemListLabel = Instance.new("TextLabel", gui)
-itemListLabel.Size = UDim2.new(0, 260, 0, 200)
-itemListLabel.Position = UDim2.new(0, 10, 0, 70)
-itemListLabel.BackgroundTransparency = 0.4
-itemListLabel.BackgroundColor3 = Color3.new(0,0,0)
-itemListLabel.TextColor3 = Color3.new(1,1,1)
-itemListLabel.TextScaled = false
-itemListLabel.TextWrapped = true
-itemListLabel.TextXAlignment = Enum.TextXAlignment.Left
-itemListLabel.TextYAlignment = Enum.TextYAlignment.Top
-itemListLabel.Font = Enum.Font.Code
-itemListLabel.Text = "Item list:"
-
-local autoFarm = true
-local ballCount, coinCount = 0, 0
+local farming = true
 local items = {}
-local currentTarget = nil
+local itemNames = {}
 
---===== ANTI AFK =====--
-for _,v in pairs(getconnections(player.Idled)) do
-    v:Disable()
-end
+-- 🖥 HUD
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.ResetOnSpawn = false
 
---===== NOCLIP =====--
+local hud = Instance.new("TextLabel", gui)
+hud.Size = UDim2.new(0, 250, 0, 60)
+hud.Position = UDim2.new(0, 10, 0, 10)
+hud.BackgroundTransparency = 0.3
+hud.BackgroundColor3 = Color3.new(0, 0, 0)
+hud.TextColor3 = Color3.new(1, 1, 1)
+hud.TextScaled = true
+hud.Text = "AutoFarm: ON"
+
+local listHud = Instance.new("TextLabel", gui)
+listHud.Size = UDim2.new(0, 300, 0, 200)
+listHud.Position = UDim2.new(0, 10, 0, 80)
+listHud.BackgroundTransparency = 0.3
+listHud.BackgroundColor3 = Color3.new(0, 0, 0)
+listHud.TextColor3 = Color3.new(1, 1, 1)
+listHud.TextScaled = false
+listHud.TextWrapped = true
+listHud.TextYAlignment = Enum.TextYAlignment.Top
+listHud.Text = "Items Found:\n"
+
+-- 🛡 Anti AFK
+player.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
+
+-- 🚪 Noclip
 RunService.Stepped:Connect(function()
-    if character and character:FindFirstChild("Humanoid") then
-        character.Humanoid:ChangeState(11)
+    if character then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
     end
 end)
 
---===== CẬP NHẬT HUD =====--
-local function updateHUD()
-    label.Text = ("Balls: %d | Coins: %d | Auto: %s"):format(
-        ballCount, coinCount, autoFarm and "ON" or "OFF"
-    )
-end
-
---===== CẬP NHẬT DANH SÁCH ITEM =====--
-local function updateItemList()
-    local names = {}
-    for _,obj in ipairs(items) do
-        if obj and obj.Parent then
-            table.insert(names, obj.Name)
-        end
-    end
-    itemListLabel.Text = "Item list:\n" .. table.concat(names, "\n")
-end
-
---===== TÌM ITEM =====--
-local function matchName(obj)
-    local lowerName = obj.Name:lower()
-    for _, key in ipairs(NameKeys) do
-        if lowerName:find(key:lower()) then
-            return true
-        end
-    end
-    return false
-end
-
-local function addItem(obj)
+-- 📦 Theo dõi item
+local function trackItem(obj)
     if obj:IsA("BasePart") then
-        table.insert(items, obj)
-        updateItemList()
-        obj.AncestryChanged:Connect(function(_, parent)
-            if not parent then
-                if obj.Name:lower():find("beachball") then
-                    ballCount += 1
-                elseif obj.Name:lower():find("coin") then
-                    coinCount += 1
-                end
-                updateHUD()
-                for i, v in ipairs(items) do
-                    if v == obj then
-                        table.remove(items, i)
-                        break
+        local name = obj.Name
+        if not table.find(itemNames, name) then
+            table.insert(itemNames, name)
+            listHud.Text = "Items Found:\n" .. table.concat(itemNames, "\n")
+        end
+        for _, key in ipairs(Config.NameKeys) do
+            if string.find(string.lower(name), string.lower(key)) then
+                table.insert(items, obj)
+                obj.AncestryChanged:Connect(function(_, parent)
+                    if not parent then
+                        for i, v in ipairs(items) do
+                            if v == obj then
+                                table.remove(items, i)
+                                break
+                            end
+                        end
                     end
-                end
-                updateItemList()
-                if currentTarget == obj then
-                    currentTarget = nil
-                end
+                end)
+                break
             end
-        end)
+        end
     end
 end
 
-for _,v in ipairs(Workspace:GetDescendants()) do
-    addItem(v)
+-- Quét ban đầu
+for _, v in ipairs(Workspace:GetDescendants()) do
+    trackItem(v)
 end
-Workspace.DescendantAdded:Connect(addItem)
+Workspace.DescendantAdded:Connect(trackItem)
 
---===== LẤY MỤC TIÊU GẦN NHẤT =====--
+-- 🎯 Lấy item gần nhất
 local function getClosest()
     local closest, dist
     for _, obj in ipairs(items) do
-        if obj and obj.Parent and matchName(obj) then
+        if obj and obj.Parent then
             local d = (hrp.Position - obj.Position).Magnitude
-            if d <= ScanRange then
-                if not closest or d < dist then
-                    closest, dist = obj, d
-                end
+            if not dist or d < dist then
+                closest, dist = obj, d
             end
         end
     end
     return closest, dist
 end
 
---===== FARM =====--
-RunService.Heartbeat:Connect(function(dt)
-    if not autoFarm then return end
-    if not currentTarget or not currentTarget.Parent then
-        currentTarget = getClosest()
-    end
-    if currentTarget then
-        local targetPos = currentTarget.Position + Vector3.new(0, PickupHeight, 0)
-        local direction = (targetPos - hrp.Position).Unit
-        hrp.Velocity = direction * FlySpeed
-        hrp.CFrame = CFrame.new(hrp.Position, targetPos)
-
-        if (hrp.Position - currentTarget.Position).Magnitude <= PickupDist then
-            firetouchinterest(hrp, currentTarget, 0)
-            firetouchinterest(hrp, currentTarget, 1)
+-- 🚀 Auto Farm Loop
+task.spawn(function()
+    while task.wait(Config.ScanDelay) do
+        if farming then
+            local target, dist = getClosest()
+            if target then
+                local dir = (target.Position - hrp.Position).Unit
+                hrp.Velocity = dir * Config.Speed
+                if dist <= Config.PickupRange then
+                    pcall(function()
+                        firetouchinterest(hrp, target, 0)
+                        firetouchinterest(hrp, target, 1)
+                    end)
+                end
+            else
+                hrp.Velocity = Vector3.zero
+            end
+        else
+            hrp.Velocity = Vector3.zero
         end
-    else
-        hrp.Velocity = Vector3.new(0,0,0)
     end
 end)
 
---===== PHÍM TẮT BẬT/TẮT =====--
-UIS.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.G then
-        autoFarm = not autoFarm
-        updateHUD()
+-- ⌨️ Toggle ON/OFF
+game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
+    if not gp and input.KeyCode == Enum.KeyCode.G then
+        farming = not farming
+        hud.Text = "AutoFarm: " .. (farming and "ON" or "OFF")
     end
 end)
