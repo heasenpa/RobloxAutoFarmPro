@@ -1,8 +1,7 @@
--- MM2 Instant Coin Pickup + NoClip
--- Nhặt coin ngay lập tức khi đến gần, xuyên tường
+-- MM2 Instant Accurate Coin Pickup + NoClip
+-- Bay thẳng vào coin, căn chuẩn hitbox, xuyên tường
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
@@ -12,9 +11,9 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 
 -- Cài đặt
 local scanRange = 100
-local speed = 60
 local scanDelay = 0.02
-local pickupDistance = 5 -- khoảng cách kích hoạt nhặt
+local moveSpeed = 80
+local pickupDistance = 3 -- khoảng cách nhặt
 local coinCount = 0
 local items = {}
 
@@ -29,7 +28,7 @@ counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
 counterLabel.Text = "Coins: 0"
 
--- NoClip
+-- NoClip xuyên tường
 RunService.Stepped:Connect(function()
     for _, part in ipairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -38,7 +37,7 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- Thêm coin vào danh sách
+-- Thêm coin
 local function addItem(obj)
     if obj:IsA("BasePart") and obj.Name:lower():find("coin") then
         table.insert(items, obj)
@@ -51,15 +50,13 @@ local function addItem(obj)
     end
 end
 
--- Theo dõi coin mới spawn
+-- Theo dõi coin mới
 Workspace.DescendantAdded:Connect(addItem)
-
--- Quét ban đầu
 for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
 
--- Tìm coin gần nhất
+-- Lấy coin gần nhất
 local function getClosestItem()
     local closest, closestDist
     for _, obj in ipairs(items) do
@@ -76,7 +73,7 @@ local function getClosestItem()
     return closest
 end
 
--- Nhặt coin ngay khi tới gần
+-- Chạm coin
 local function pickupCoin(coin)
     if coin and coin.Parent then
         firetouchinterest(hrp, coin, 0)
@@ -84,15 +81,17 @@ local function pickupCoin(coin)
     end
 end
 
--- Vòng lặp chính
+-- Main loop
 task.spawn(function()
     while task.wait(scanDelay) do
         local target = getClosestItem()
         if target then
             local distance = (hrp.Position - target.Position).Magnitude
             if distance > pickupDistance then
-                local direction = (target.Position - hrp.Position).Unit
-                hrp.CFrame = CFrame.new(hrp.Position + direction * speed * scanDelay)
+                -- Bay thẳng tới chính giữa coin
+                local targetPos = target.Position + Vector3.new(0, 1, 0) -- cao hơn một chút để hitbox khớp
+                local dir = (targetPos - hrp.Position).Unit
+                hrp.CFrame = CFrame.new(hrp.Position + dir * moveSpeed * scanDelay, targetPos)
             else
                 pickupCoin(target)
             end
