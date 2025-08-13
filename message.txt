@@ -1,5 +1,5 @@
--- MM2 Safe Auto Pickup Optimized
--- Chỉ nhặt coin, xuyên tường (NoClip), giảm lag tối đa
+-- MM2 Fast Coin Pickup + NoClip
+-- Nhặt coin liên tục, xuyên tường
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -12,9 +12,10 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 
 -- Cài đặt
 local scanRange = 100
-local speed = 20
-local pickupDistance = 1
-local scanDelay = 0.2 -- Giảm số lần quét
+local speed = 40 -- tốc độ di chuyển nhanh hơn
+local scanDelay = 0.05 -- quét nhanh hơn
+local coinCount = 0
+local items = {}
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -27,10 +28,7 @@ counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
 counterLabel.Text = "Coins: 0"
 
-local coinCount = 0
-local items = {}
-
--- Thêm NoClip
+-- NoClip luôn bật
 RunService.Stepped:Connect(function()
     for _, part in ipairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -39,7 +37,7 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- Lưu coin khi spawn
+-- Thêm coin vào danh sách
 local function addItem(obj)
     if obj:IsA("BasePart") and obj.Name:lower():find("coin") then
         table.insert(items, obj)
@@ -77,13 +75,12 @@ local function getClosestItem()
     return closest
 end
 
--- Di chuyển mượt
+-- Di chuyển mượt mà nhưng không chờ kết thúc
 local function moveTo(targetPos)
     local distance = (hrp.Position - targetPos).Magnitude
     local tweenTime = distance / speed
     local tween = TweenService:Create(hrp, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
     tween:Play()
-    tween.Completed:Wait()
 end
 
 -- Vòng lặp chính
