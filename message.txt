@@ -1,0 +1,308 @@
+--[[
+Auto Farm Pro (LocalScript) — bay mượt, xuyên tường, ổn định kiểu script hub
+Đặt script này vào: StarterPlayer ▸ StarterPlayerScripts (LocalScript)
+
+Tính năng:
+- Bay mượt bằng AlignPosition/AlignOrientation (không teleport, ít giật)
+- Xuyên tường (no-clip) ổn định, áp dụng mỗi frame và khi respawn
+- Ưu tiên mục tiêu theo loại (cấu hình), giữ mục tiêu cho tới khi nhặt xong
+- Chống idle (anti-afk) để farm lâu
+- HUD đếm đã nhặt
+- Toggle bật/tắt bằng phím G
+]]
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+
+local player = Players.LocalPlayer
+
+-- ===================== CONFIG =====================
+local Config = {
+	ScanRange = 175,              -- Tầm quét item (studs)
+	MaxSpeed = 85,                -- Tốc độ tối đa khi AlignPosition kéo
+	Responsiveness = 25,          -- Độ phản hồi (cao = bám nhanh, mượt)
+	PickupHeight = 2,             -- Bay cao hơn item chút
+	NameKeys = { "coin", "beachball" }, -- Thứ tự ưu tiên (từ trái qua phải)
+	SwitchIfCloserBy = 15,        -- Đổi mục tiêu nếu có mục tiêu khác gần hơn bao nhiêu studs
+	StopDistance = 1.2,           -- Khoảng gần coi như đã tới mục tiêu (studs)
+	HotkeyToggle = Enum.KeyCode.G -- Phím bật/tắt
+}
+-- ==================================================
+
+-- ===================== STATE ======================
+local character, humanoid, hrp
+local items = {}           -- danh sách root BasePart của item
+local tracked = {}         -- set để tránh track trùng
+local currentTarget = nil
+local enabled = true
+local connections = {}
+local alignPos, alignOri, rootAtt
+local ballCount, coinCount = 0, 0
+-- ==================================================
+
+-- =============== SMALL UTILITIES ==================
+local function connect(sig, fn)
+	local c = sig:Connect(fn)
+	table.insert(connections, c)
+	return c
+end
+
+local function disconnectAll()
+	for _, c in ipairs(connections) do
+		pcall(function() c:Disconnect() end)
+	end
+	connections = {}
+end
+
+local function lower(s)
+	return string.lower(s or "")
+end
+
+local function nameIndexInPriority(name)
+	local n = lower(name)
+	for idx, key in ipairs(Config.NameKeys) do
+		if n:find(key, 1, true) then return idx end
+	end
+	return math.huge
+end
+
+local function isTargetName(obj)
+	return nameIndexInPriority(obj.Name) ~= math.huge
+end
+
+local function getRootPart(obj)
+	if obj:IsA("BasePart") then return obj end
+	if obj:IsA("Model") then
+		if obj.PrimaryPart then return obj.PrimaryPart end
+		for _, d in ipairs(obj:GetDescendants()) do
+			if d:IsA("BasePart") then return d end
+		end
+	end
+	return nil
+end
+
+local function updateCurrentHRP()
+	if character then
+		hrP = character:FindFirstChild("HumanoidRootPart") -- guard typo
+		hrP = hrP or character:WaitForChild("HumanoidRootPart")
+		hrP.AssemblyLinearVelocity = Vector3.zero
+		return hrP
+	end
+end
+-- ==================================================
+
+-- ====================== HUD =======================
+local gui = Instance.new("ScreenGui")
+gui.Name = "AutoFarmProUI"
+gui.ResetOnSpawn = false
+
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0, 260, 0, 44)
+label.Position = UDim2.new(0, 10, 0, 10)
+label.BackgroundTransparency = 0.25
+label.BackgroundColor3 = Color3.fromRGB(10,10,10)
+label.TextColor3 = Color3.new(1,1,1)
+label.TextScaled = true
+label.Font = Enum.Font.GothamMedium
+label.Text = "Balls: 0 | Coins: 0 | G: On"
+label.Parent = gui
+
+local function updateHUD()
+	label.Text = string.format("Balls: %d | Coins: %d | %s: %s",
+		ballCount, coinCount,
+		Config.HotkeyToggle.Name or "G",
+		enabled and "On" or "Off")
+end
+-- ==================================================
+
+-- =================== ANTI IDLE ====================
+connect(player.Idled, function()
+	VirtualUser:Button2Down(Vector2.new(), Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame or CFrame.new())
+	task.wait(1)
+	VirtualUser:Button2Up(Vector2.new(), Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame or CFrame.new())
+end)
+-- ==================================================
+
+-- ==================== NO CLIP =====================
+local function noClipCharacter(char)
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+		end
+	end
+end
+-- ==================================================
+
+-- ============== MOVEMENT CONTROLLER ===============
+local function createAligners()
+	if not hrp then return end
+	if rootAtt then rootAtt:Destroy() end
+	if alignPos then alignPos:Destroy() end
+	if alignOri then alignOri:Destroy() end
+
+	rootAtt = Instance.new("Attachment")
+	rootAtt.Name = "AutoFarm_Attachment"
+	rootAtt.Parent = hrp
+
+	alignPos = Instance.new("AlignPosition")
+	alignPos.Name = "AutoFarm_AlignPos"
+	alignPos.Mode = Enum.PositionAlignmentMode.OneAttachment
+	alignPos.Attachment0 = rootAtt
+	alignPos.RigidityEnabled = false
+	alignPos.MaxForce = math.huge
+	alignPos.MaxVelocity = Config.MaxSpeed
+	alignPos.Responsiveness = Config.Responsiveness
+	alignPos.ApplyAtCenterOfMass = true
+	alignPos.Parent = hrp
+
+	alignOri = Instance.new("AlignOrientation")
+	alignOri.Name = "AutoFarm_AlignOri"
+	alignOri.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	alignOri.Attachment0 = rootAtt
+	alignOri.RigidityEnabled = false
+	alignOri.MaxTorque = math.huge
+	alignOri.Responsiveness = Config.Responsiveness
+	alignOri.Parent = hrp
+end
+
+local function moveTowards(targetPos)
+	-- Giữ vận tốc ổn định, giảm jitter vật lý
+	if hrp then
+		hrP.AssemblyLinearVelocity = Vector3.zero
+		hrP.AssemblyAngularVelocity = Vector3.zero
+	end
+	if alignPos and alignOri then
+		alignPos.Position = targetPos
+		alignOri.CFrame = CFrame.lookAt(hrp.Position, targetPos)
+	end
+end
+-- ==================================================
+
+-- =============== TRACK / SELECTOR =================
+local function trackRoot(root)
+	if tracked[root] then return end
+	tracked[root] = true
+	table.insert(items, root)
+
+	-- Khi item biến mất => tăng đếm + dọn list
+	connect(root.AncestryChanged, function(_, parent)
+		if not parent then
+			local lname = lower(root.Name)
+			if lname:find("beachball") then ballCount += 1
+			elseif lname:find("coin") then coinCount += 1 end
+			for i = #items, 1, -1 do
+				if items[i] == root then table.remove(items, i) break end
+			end
+			tracked[root] = nil
+			if currentTarget == root then currentTarget = nil end
+			updateHUD()
+		end
+	end)
+end
+
+local function tryTrack(obj)
+	if not obj or not obj.Parent then return end
+	if not (obj:IsA("BasePart") or obj:IsA("Model")) then return end
+	-- Kiểm tên của obj và tổ tiên gần
+	local ok = isTargetName(obj)
+	if not ok and obj.Parent then ok = isTargetName(obj.Parent) end
+	if not ok and obj.Parent and obj.Parent.Parent then ok = isTargetName(obj.Parent.Parent) end
+	if not ok then return end
+	local root = getRootPart(obj)
+	if root then trackRoot(root) end
+end
+
+local function currentPriorityIndex(obj)
+	return nameIndexInPriority(obj.Name)
+end
+
+local function getClosestBest()
+	if not hrp then return nil end
+	local origin = hrp.Position
+	local best, bestDist, bestPri = nil, math.huge, math.huge
+	for i = #items, 1, -1 do
+		local it = items[i]
+		if not it or not it.Parent then table.remove(items, i) else
+			local d = (origin - it.Position).Magnitude
+			if d <= Config.ScanRange then
+				local pri = currentPriorityIndex(it)
+				if pri < bestPri or (pri == bestPri and d < bestDist) then
+					best, bestDist, bestPri = it, d, pri
+				end
+			end
+		end
+	end
+	return best, bestDist
+end
+-- ==================================================
+
+-- ================= CHARACTER BIND =================
+local function bindCharacter(char)
+	disconnectAll()
+	character = char
+	humanoid = character:WaitForChild("Humanoid")
+	hrp = character:WaitForChild("HumanoidRootPart")
+
+	-- no-clip ổn định mỗi step
+	connect(RunService.Stepped, function()
+		noClipCharacter(character)
+	end)
+
+	-- tạo aligners cho bay mượt
+	createAligners()
+
+	-- vòng lặp điều khiển bay
+	connect(RunService.RenderStepped, function()
+		if not enabled or not hrp or not hrp.Parent then return end
+
+		-- Giữ mục tiêu nếu còn hợp lệ, hoặc chọn cái tốt nhất
+		if (not currentTarget) or (not currentTarget.Parent) then
+			currentTarget = select(1, getClosestBest())
+		else
+			-- Nếu có mục tiêu khác gần hơn đáng kể thì chuyển
+			local newTarget, newDist = getClosestBest()
+			if newTarget and newTarget ~= currentTarget then
+				local curDist = (hrp.Position - currentTarget.Position).Magnitude
+				if newDist + Config.SwitchIfCloserBy < curDist then
+					currentTarget = newTarget
+				end
+			end
+		end
+
+		if currentTarget then
+			local targetPos = currentTarget.Position + Vector3.new(0, Config.PickupHeight, 0)
+			moveTowards(targetPos)
+
+			-- coi như tới nơi => cho phép chọn mục tiêu khác ở frame tiếp
+			if (hrp.Position - targetPos).Magnitude <= Config.StopDistance then
+				currentTarget = nil
+			end
+		end
+	end)
+
+	-- Toggle bật/tắt
+	connect(UserInputService.InputBegan, function(input, gameProcessed)
+		if gameProcessed then return end
+		if input.KeyCode == Config.HotkeyToggle then
+			enabled = not enabled
+			updateHUD()
+		end
+	end)
+end
+
+-- Khởi tạo nhân vật hiện có / respawn
+if player.Character then bindCharacter(player.Character) end
+connect(player.CharacterAdded, bindCharacter)
+
+-- Track item sẵn có + item spawn mới
+for _, d in ipairs(Workspace:GetDescendants()) do
+	tryTrack(d)
+end
+connect(Workspace.DescendantAdded, tryTrack)
+
+updateHUD()
