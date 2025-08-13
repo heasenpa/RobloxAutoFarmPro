@@ -1,114 +1,99 @@
+-- MM2 Safe Auto Pickup Coins Only (Optimized HUD)
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
--- Cấu hình
-local Config = {}
-Config.ScanRange = 150
-Config.MaxSpeed = 60
-Config.PickupHeight = 0.5 -- sát item để nhặt
-Config.TargetKeyword = "coin" -- tìm mọi item có "coin" trong tên
+-- Cài đặt
+local scanRange = 100       -- tầm quét coin
+local speed = 25            -- tốc độ bay
+local pickupHeight = 2      -- bay cao hơn coin
+local scanDelay = 0.05      -- quét nhanh
+local pickupDistance = 3    -- khoảng cách bắt đầu nhặt
 
 -- HUD
-local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-local label = Instance.new("TextLabel", gui)
-label.Size = UDim2.new(0, 220, 0, 50)
-label.Position = UDim2.new(0, 10, 0, 10)
-label.BackgroundColor3 = Color3.new(0,0,0)
-label.BackgroundTransparency = 0.5
-label.TextColor3 = Color3.new(1,1,1)
-label.TextScaled = true
-label.Text = "Coins: 0"
+local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+local counterLabel = Instance.new("TextLabel", screenGui)
+counterLabel.Size = UDim2.new(0, 200, 0, 50)
+counterLabel.Position = UDim2.new(0, 10, 0, 10)
+counterLabel.BackgroundTransparency = 0.5
+counterLabel.BackgroundColor3 = Color3.new(0,0,0)
+counterLabel.TextColor3 = Color3.new(1,1,1)
+counterLabel.TextScaled = true
+counterLabel.Text = "Coins: 0"
 
 local coinCount = 0
 local items = {}
-local currentTarget = nil
 
 local function updateHUD()
-	label.Text = ("Coins: %d"):format(coinCount)
+    counterLabel.Text = ("Coins: %d"):format(coinCount)
 end
 
--- Kiểm tra tên vật phẩm có chứa "coin"
-local function isCoinItem(obj)
-	return obj.Name:lower():find(Config.TargetKeyword:lower()) ~= nil
+-- Thêm coin mới spawn
+local function addItem(obj)
+    if obj:IsA("BasePart") then
+        local name = obj.Name:lower()
+        if name:find("coin") then
+            table.insert(items, obj)
+
+            -- Khi chạm coin thì mới cộng
+            obj.Touched:Connect(function(hit)
+                if hit and hit.Parent == character then
+                    coinCount += 1
+                    updateHUD()
+                    -- Xóa khỏi danh sách
+                    for i, v in ipairs(items) do
+                        if v == obj then
+                            table.remove(items, i)
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+    end
 end
 
--- Theo dõi item mới
-local function trackItem(obj)
-	if obj:IsA("BasePart") and isCoinItem(obj) then
-		table.insert(items, obj)
-		obj.AncestryChanged:Connect(function(_, parent)
-			if not parent then
-				coinCount += 1
-				updateHUD()
-				for i, v in ipairs(items) do
-					if v == obj then
-						table.remove(items, i)
-						break
-					end
-				end
-				if currentTarget == obj then
-					currentTarget = nil
-				end
-			end
-		end)
-	end
+-- Quét ban đầu
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    addItem(obj)
 end
-
--- Quét ban đầu + khi spawn mới
-for _, v in ipairs(Workspace:GetDescendants()) do
-	trackItem(v)
-end
-Workspace.DescendantAdded:Connect(trackItem)
+Workspace.DescendantAdded:Connect(addItem)
 
 -- Lấy coin gần nhất
-local function getClosest()
-	local closest, dist
-	for _, obj in ipairs(items) do
-		if obj and obj.Parent then
-			local d = (hrp.Position - obj.Position).Magnitude
-			if d <= Config.ScanRange then
-				if not closest or d < dist then
-					closest, dist = obj, d
-				end
-			end
-		end
-	end
-	return closest
+local function getClosestItem()
+    local closest, closestDist
+    for _, obj in ipairs(items) do
+        if obj and obj.Parent then
+            local dist = (hrp.Position - obj.Position).Magnitude
+            if dist <= scanRange then
+                if not closest or dist < closestDist then
+                    closest, closestDist = obj, dist
+                end
+            end
+        end
+    end
+    return closest
 end
 
--- NoClip xuyên tường
-RunService.Stepped:Connect(function()
-	if character and character:FindFirstChildOfClass("Humanoid") then
-		for _, part in ipairs(character:GetDescendants()) do
-			if part:IsA("BasePart") then
-				part.CanCollide = false
-			end
-		end
-	end
-end)
+-- Di chuyển mượt + nhặt coin
+task.spawn(function()
+    while task.wait(scanDelay) do
+        local target = getClosestItem()
+        if target and target.Parent then
+            local targetPos = target.Position + Vector3.new(0, pickupHeight, 0)
+            local direction = (targetPos - hrp.Position).Unit
+            hrp.CFrame = CFrame.new(hrp.Position + direction * speed * scanDelay, targetPos)
 
--- Bay và nhặt coin
-RunService.Heartbeat:Connect(function(dt)
-	if not currentTarget or not currentTarget.Parent then
-		currentTarget = getClosest()
-	end
-	if currentTarget then
-		local targetPos = currentTarget.Position + Vector3.new(0, Config.PickupHeight, 0)
-		local dir = (targetPos - hrp.Position)
-		local dist = dir.Magnitude
-		if dist > 0.5 then
-			hrp.CFrame = CFrame.new(hrp.Position + dir.Unit * Config.MaxSpeed * dt, targetPos)
-		else
-			pcall(function()
-				firetouchinterest(hrp, currentTarget, 0)
-				firetouchinterest(hrp, currentTarget, 1)
-			end)
-			currentTarget = nil
-		end
-	end
+            -- Khi gần coin thì chạm
+            if (hrp.Position - target.Position).Magnitude <= pickupDistance then
+                firetouchinterest(hrp, target, 0)
+                firetouchinterest(hrp, target, 1)
+            end
+        end
+    end
 end)
