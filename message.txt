@@ -1,5 +1,5 @@
--- MM2 Fast Coin Pickup + NoClip
--- Nhặt coin liên tục, xuyên tường
+-- MM2 Instant Coin Pickup + NoClip
+-- Nhặt coin ngay lập tức khi đến gần, xuyên tường
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -12,8 +12,9 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 
 -- Cài đặt
 local scanRange = 100
-local speed = 40 -- tốc độ di chuyển nhanh hơn
-local scanDelay = 0.05 -- quét nhanh hơn
+local speed = 60
+local scanDelay = 0.02
+local pickupDistance = 5 -- khoảng cách kích hoạt nhặt
 local coinCount = 0
 local items = {}
 
@@ -28,7 +29,7 @@ counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
 counterLabel.Text = "Coins: 0"
 
--- NoClip luôn bật
+-- NoClip
 RunService.Stepped:Connect(function()
     for _, part in ipairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -75,12 +76,12 @@ local function getClosestItem()
     return closest
 end
 
--- Di chuyển mượt mà nhưng không chờ kết thúc
-local function moveTo(targetPos)
-    local distance = (hrp.Position - targetPos).Magnitude
-    local tweenTime = distance / speed
-    local tween = TweenService:Create(hrp, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
-    tween:Play()
+-- Nhặt coin ngay khi tới gần
+local function pickupCoin(coin)
+    if coin and coin.Parent then
+        firetouchinterest(hrp, coin, 0)
+        firetouchinterest(hrp, coin, 1)
+    end
 end
 
 -- Vòng lặp chính
@@ -88,7 +89,13 @@ task.spawn(function()
     while task.wait(scanDelay) do
         local target = getClosestItem()
         if target then
-            moveTo(target.Position + Vector3.new(0, 2, 0))
+            local distance = (hrp.Position - target.Position).Magnitude
+            if distance > pickupDistance then
+                local direction = (target.Position - hrp.Position).Unit
+                hrp.CFrame = CFrame.new(hrp.Position + direction * speed * scanDelay)
+            else
+                pickupCoin(target)
+            end
         end
     end
 end)
