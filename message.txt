@@ -1,4 +1,6 @@
--- MM2 Safe Auto Pickup Coins Only (Optimized HUD)
+-- MM2 Safe Auto Pickup Optimized
+-- Ưu tiên BeachBall trước Coin, giảm lag tối đa
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -9,11 +11,10 @@ local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
 -- Cài đặt
-local scanRange = 100       -- tầm quét coin
-local speed = 25            -- tốc độ bay
-local pickupHeight = 2      -- bay cao hơn coin
-local scanDelay = 0.05      -- quét nhanh
-local pickupDistance = 3    -- khoảng cách bắt đầu nhặt
+local scanRange = 100
+local speed = 20
+local pickupDistance = 1
+local scanDelay = 0.2 -- Giảm số lần quét
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -24,55 +25,50 @@ counterLabel.BackgroundTransparency = 0.5
 counterLabel.BackgroundColor3 = Color3.new(0,0,0)
 counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
-counterLabel.Text = "Coins: 0"
+counterLabel.Text = "Balls: 0 | Coins: 0"
 
-local coinCount = 0
+local ballCount, coinCount = 0, 0
+
+-- Lưu vật phẩm khi spawn
 local items = {}
-
-local function updateHUD()
-    counterLabel.Text = ("Coins: %d"):format(coinCount)
-end
-
--- Thêm coin mới spawn
 local function addItem(obj)
     if obj:IsA("BasePart") then
         local name = obj.Name:lower()
-        if name:find("coin") then
+        if name:find("beachball") or name:find("coin") then
             table.insert(items, obj)
-
-            -- Khi chạm coin thì mới cộng
-            obj.Touched:Connect(function(hit)
-                if hit and hit.Parent == character then
-                    coinCount += 1
-                    updateHUD()
-                    -- Xóa khỏi danh sách
-                    for i, v in ipairs(items) do
-                        if v == obj then
-                            table.remove(items, i)
-                            break
-                        end
+            obj.AncestryChanged:Connect(function(_, parent)
+                if not parent then
+                    -- Khi vật phẩm biến mất
+                    if name:find("beachball") then
+                        ballCount += 1
+                    elseif name:find("coin") then
+                        coinCount += 1
                     end
+                    counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
                 end
             end)
         end
     end
 end
 
+-- Theo dõi vật phẩm mới spawn
+Workspace.DescendantAdded:Connect(addItem)
+
 -- Quét ban đầu
 for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
-Workspace.DescendantAdded:Connect(addItem)
 
--- Lấy coin gần nhất
+-- Tìm mục tiêu gần nhất (ưu tiên bóng)
 local function getClosestItem()
     local closest, closestDist
     for _, obj in ipairs(items) do
         if obj and obj.Parent then
             local dist = (hrp.Position - obj.Position).Magnitude
             if dist <= scanRange then
-                if not closest or dist < closestDist then
-                    closest, closestDist = obj, dist
+                if not closest or dist < closestDist or (closest.Name:lower():find("coin") and obj.Name:lower():find("beachball")) then
+                    closest = obj
+                    closestDist = dist
                 end
             end
         end
@@ -80,20 +76,21 @@ local function getClosestItem()
     return closest
 end
 
--- Di chuyển mượt + nhặt coin
+-- Di chuyển mượt
+local function moveTo(targetPos)
+    local distance = (hrp.Position - targetPos).Magnitude
+    local tweenTime = distance / speed
+    local tween = TweenService:Create(hrp, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- Vòng lặp chính
 task.spawn(function()
     while task.wait(scanDelay) do
         local target = getClosestItem()
-        if target and target.Parent then
-            local targetPos = target.Position + Vector3.new(0, pickupHeight, 0)
-            local direction = (targetPos - hrp.Position).Unit
-            hrp.CFrame = CFrame.new(hrp.Position + direction * speed * scanDelay, targetPos)
-
-            -- Khi gần coin thì chạm
-            if (hrp.Position - target.Position).Magnitude <= pickupDistance then
-                firetouchinterest(hrp, target, 0)
-                firetouchinterest(hrp, target, 1)
-            end
+        if target then
+            moveTo(target.Position + Vector3.new(0, 2, 0))
         end
     end
 end)
