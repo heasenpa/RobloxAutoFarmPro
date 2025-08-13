@@ -10,8 +10,8 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 local Config = {}
 Config.ScanRange = 150
 Config.MaxSpeed = 60
-Config.PickupHeight = 0.5 -- Bay gần sát item để chắc chắn nhặt
-Config.NameKeys = {"Coin_Server", "CoinVisual"} -- tên vật phẩm mới
+Config.PickupHeight = 0.5 -- sát item để nhặt
+Config.TargetKeyword = "coin" -- tìm mọi item có "coin" trong tên
 
 -- HUD
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -22,34 +22,28 @@ label.BackgroundColor3 = Color3.new(0,0,0)
 label.BackgroundTransparency = 0.5
 label.TextColor3 = Color3.new(1,1,1)
 label.TextScaled = true
-label.Text = "Items: 0"
+label.Text = "Coins: 0"
 
-local itemCount = 0
+local coinCount = 0
 local items = {}
 local currentTarget = nil
 
 local function updateHUD()
-	label.Text = ("Items: %d"):format(itemCount)
+	label.Text = ("Coins: %d"):format(coinCount)
 end
 
--- Hàm kiểm tra tên vật phẩm
-local function isTargetItem(obj)
-	local lowerName = obj.Name:lower()
-	for _, key in ipairs(Config.NameKeys) do
-		if lowerName:find(key:lower()) then
-			return true
-		end
-	end
-	return false
+-- Kiểm tra tên vật phẩm có chứa "coin"
+local function isCoinItem(obj)
+	return obj.Name:lower():find(Config.TargetKeyword:lower()) ~= nil
 end
 
--- Theo dõi item
+-- Theo dõi item mới
 local function trackItem(obj)
-	if obj:IsA("BasePart") and isTargetItem(obj) then
+	if obj:IsA("BasePart") and isCoinItem(obj) then
 		table.insert(items, obj)
 		obj.AncestryChanged:Connect(function(_, parent)
 			if not parent then
-				itemCount += 1
+				coinCount += 1
 				updateHUD()
 				for i, v in ipairs(items) do
 					if v == obj then
@@ -71,7 +65,7 @@ for _, v in ipairs(Workspace:GetDescendants()) do
 end
 Workspace.DescendantAdded:Connect(trackItem)
 
--- Lấy item gần nhất
+-- Lấy coin gần nhất
 local function getClosest()
 	local closest, dist
 	for _, obj in ipairs(items) do
@@ -87,7 +81,7 @@ local function getClosest()
 	return closest
 end
 
--- NoClip
+-- NoClip xuyên tường
 RunService.Stepped:Connect(function()
 	if character and character:FindFirstChildOfClass("Humanoid") then
 		for _, part in ipairs(character:GetDescendants()) do
@@ -98,7 +92,7 @@ RunService.Stepped:Connect(function()
 	end
 end)
 
--- Bay và nhặt
+-- Bay và nhặt coin
 RunService.Heartbeat:Connect(function(dt)
 	if not currentTarget or not currentTarget.Parent then
 		currentTarget = getClosest()
@@ -110,7 +104,6 @@ RunService.Heartbeat:Connect(function(dt)
 		if dist > 0.5 then
 			hrp.CFrame = CFrame.new(hrp.Position + dir.Unit * Config.MaxSpeed * dt, targetPos)
 		else
-			-- Kích hoạt chạm để nhặt
 			pcall(function()
 				firetouchinterest(hrp, currentTarget, 0)
 				firetouchinterest(hrp, currentTarget, 1)
