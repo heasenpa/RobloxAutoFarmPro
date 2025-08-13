@@ -1,142 +1,121 @@
--- Auto Farm Fix V3 - Mobile Friendly
--- By GPT
-
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local VirtualUser = game:GetService("VirtualUser")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
--- ⚙️ Cấu hình
-local Config = {
-    ScanDelay = 0.15, -- Thời gian quét lại item
-    Speed = 50,       -- Tốc độ bay
-    PickupRange = 3,  -- Khoảng cách để nhặt
-    NameKeys = {"BeachBall", "Coin"} -- Tên item muốn farm
-}
+-- Cấu hình
+local Config = {}
+Config.ScanRange = 150
+Config.MaxSpeed = 60
+Config.PickupHeight = 0.5 -- Bay gần sát item để chắc chắn nhặt
+Config.NameKeys = {"Coin_Server", "CoinVisual"} -- tên vật phẩm mới
 
-local farming = true
-local items = {}
-local itemNames = {}
-
--- 🖥 HUD
+-- HUD
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.ResetOnSpawn = false
+local label = Instance.new("TextLabel", gui)
+label.Size = UDim2.new(0, 220, 0, 50)
+label.Position = UDim2.new(0, 10, 0, 10)
+label.BackgroundColor3 = Color3.new(0,0,0)
+label.BackgroundTransparency = 0.5
+label.TextColor3 = Color3.new(1,1,1)
+label.TextScaled = true
+label.Text = "Items: 0"
 
-local hud = Instance.new("TextLabel", gui)
-hud.Size = UDim2.new(0, 250, 0, 60)
-hud.Position = UDim2.new(0, 10, 0, 10)
-hud.BackgroundTransparency = 0.3
-hud.BackgroundColor3 = Color3.new(0, 0, 0)
-hud.TextColor3 = Color3.new(1, 1, 1)
-hud.TextScaled = true
-hud.Text = "AutoFarm: ON"
+local itemCount = 0
+local items = {}
+local currentTarget = nil
 
-local listHud = Instance.new("TextLabel", gui)
-listHud.Size = UDim2.new(0, 300, 0, 200)
-listHud.Position = UDim2.new(0, 10, 0, 80)
-listHud.BackgroundTransparency = 0.3
-listHud.BackgroundColor3 = Color3.new(0, 0, 0)
-listHud.TextColor3 = Color3.new(1, 1, 1)
-listHud.TextScaled = false
-listHud.TextWrapped = true
-listHud.TextYAlignment = Enum.TextYAlignment.Top
-listHud.Text = "Items Found:\n"
-
--- 🛡 Anti AFK
-player.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new())
-end)
-
--- 🚪 Noclip
-RunService.Stepped:Connect(function()
-    if character then
-        for _, part in ipairs(character:GetDescendants()) do
-            if part:IsA("BasePart") then
-                part.CanCollide = false
-            end
-        end
-    end
-end)
-
--- 📦 Theo dõi item
-local function trackItem(obj)
-    if obj:IsA("BasePart") then
-        local name = obj.Name
-        if not table.find(itemNames, name) then
-            table.insert(itemNames, name)
-            listHud.Text = "Items Found:\n" .. table.concat(itemNames, "\n")
-        end
-        for _, key in ipairs(Config.NameKeys) do
-            if string.find(string.lower(name), string.lower(key)) then
-                table.insert(items, obj)
-                obj.AncestryChanged:Connect(function(_, parent)
-                    if not parent then
-                        for i, v in ipairs(items) do
-                            if v == obj then
-                                table.remove(items, i)
-                                break
-                            end
-                        end
-                    end
-                end)
-                break
-            end
-        end
-    end
+local function updateHUD()
+	label.Text = ("Items: %d"):format(itemCount)
 end
 
--- Quét ban đầu
+-- Hàm kiểm tra tên vật phẩm
+local function isTargetItem(obj)
+	local lowerName = obj.Name:lower()
+	for _, key in ipairs(Config.NameKeys) do
+		if lowerName:find(key:lower()) then
+			return true
+		end
+	end
+	return false
+end
+
+-- Theo dõi item
+local function trackItem(obj)
+	if obj:IsA("BasePart") and isTargetItem(obj) then
+		table.insert(items, obj)
+		obj.AncestryChanged:Connect(function(_, parent)
+			if not parent then
+				itemCount += 1
+				updateHUD()
+				for i, v in ipairs(items) do
+					if v == obj then
+						table.remove(items, i)
+						break
+					end
+				end
+				if currentTarget == obj then
+					currentTarget = nil
+				end
+			end
+		end)
+	end
+end
+
+-- Quét ban đầu + khi spawn mới
 for _, v in ipairs(Workspace:GetDescendants()) do
-    trackItem(v)
+	trackItem(v)
 end
 Workspace.DescendantAdded:Connect(trackItem)
 
--- 🎯 Lấy item gần nhất
+-- Lấy item gần nhất
 local function getClosest()
-    local closest, dist
-    for _, obj in ipairs(items) do
-        if obj and obj.Parent then
-            local d = (hrp.Position - obj.Position).Magnitude
-            if not dist or d < dist then
-                closest, dist = obj, d
-            end
-        end
-    end
-    return closest, dist
+	local closest, dist
+	for _, obj in ipairs(items) do
+		if obj and obj.Parent then
+			local d = (hrp.Position - obj.Position).Magnitude
+			if d <= Config.ScanRange then
+				if not closest or d < dist then
+					closest, dist = obj, d
+				end
+			end
+		end
+	end
+	return closest
 end
 
--- 🚀 Auto Farm Loop
-task.spawn(function()
-    while task.wait(Config.ScanDelay) do
-        if farming then
-            local target, dist = getClosest()
-            if target then
-                local dir = (target.Position - hrp.Position).Unit
-                hrp.Velocity = dir * Config.Speed
-                if dist <= Config.PickupRange then
-                    pcall(function()
-                        firetouchinterest(hrp, target, 0)
-                        firetouchinterest(hrp, target, 1)
-                    end)
-                end
-            else
-                hrp.Velocity = Vector3.zero
-            end
-        else
-            hrp.Velocity = Vector3.zero
-        end
-    end
+-- NoClip
+RunService.Stepped:Connect(function()
+	if character and character:FindFirstChildOfClass("Humanoid") then
+		for _, part in ipairs(character:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = false
+			end
+		end
+	end
 end)
 
--- ⌨️ Toggle ON/OFF
-game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
-    if not gp and input.KeyCode == Enum.KeyCode.G then
-        farming = not farming
-        hud.Text = "AutoFarm: " .. (farming and "ON" or "OFF")
-    end
+-- Bay và nhặt
+RunService.Heartbeat:Connect(function(dt)
+	if not currentTarget or not currentTarget.Parent then
+		currentTarget = getClosest()
+	end
+	if currentTarget then
+		local targetPos = currentTarget.Position + Vector3.new(0, Config.PickupHeight, 0)
+		local dir = (targetPos - hrp.Position)
+		local dist = dir.Magnitude
+		if dist > 0.5 then
+			hrp.CFrame = CFrame.new(hrp.Position + dir.Unit * Config.MaxSpeed * dt, targetPos)
+		else
+			-- Kích hoạt chạm để nhặt
+			pcall(function()
+				firetouchinterest(hrp, currentTarget, 0)
+				firetouchinterest(hrp, currentTarget, 1)
+			end)
+			currentTarget = nil
+		end
+	end
 end)
