@@ -1,6 +1,4 @@
--- MM2 Ultra Fast Continuous Farm
--- Liên tục, không dừng, ưu tiên BeachBall, No-clip
-
+-- Ultra Fast Continuous Farm (không delay)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -11,29 +9,23 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 
 -- Cấu hình
 local scanRange = 150
-local speed = 120 -- tốc độ cực nhanh
 local pickupHeight = 2
-local scanDelay = 0.02 -- quét liên tục
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 local counterLabel = Instance.new("TextLabel", screenGui)
-counterLabel.Size = UDim2.new(0, 200, 0, 50)
-counterLabel.Position = UDim2.new(0, 10, 0, 10)
+counterLabel.Size = UDim2.new(0,200,0,50)
+counterLabel.Position = UDim2.new(0,10,0,10)
 counterLabel.BackgroundTransparency = 0.5
 counterLabel.BackgroundColor3 = Color3.new(0,0,0)
 counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
 counterLabel.Text = "Balls: 0 | Coins: 0"
 
-local ballCount, coinCount = 0, 0
+local ballCount, coinCount = 0,0
 local items = {}
 
-local function updateHUD()
-    counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
-end
-
--- No-clip xuyên tường
+-- No-clip
 RunService.Stepped:Connect(function()
     for _, part in ipairs(character:GetDescendants()) do
         if part:IsA("BasePart") then
@@ -47,15 +39,18 @@ local function addItem(obj)
     if obj:IsA("BasePart") then
         local name = obj.Name:lower()
         if name:find("beachball") or name:find("coin") then
-            table.insert(items, obj)
+            items[obj] = name
             obj.AncestryChanged:Connect(function(_, parent)
                 if not parent then
-                    if name:find("beachball") then
-                        ballCount += 1
-                    elseif name:find("coin") then
-                        coinCount += 1
+                    if items[obj] then
+                        if items[obj]:find("beachball") then
+                            ballCount += 1
+                        else
+                            coinCount += 1
+                        end
+                        items[obj] = nil
+                        counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
                     end
-                    updateHUD()
                 end
             end)
         end
@@ -67,31 +62,24 @@ for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
 
--- Lấy vật phẩm gần nhất, ưu tiên BeachBall
-local function getClosestItem()
-    local closest, closestDist
-    for _, obj in ipairs(items) do
-        if obj and obj.Parent then
-            local dist = (hrp.Position - obj.Position).Magnitude
+-- Vòng lặp farm liên tục
+RunService.RenderStepped:Connect(function()
+    local closest, closestDist, closestName
+    local hrpPos = hrp.Position
+    for obj, name in pairs(items) do
+        if obj.Parent then
+            local dist = (hrpPos - obj.Position).Magnitude
             if dist <= scanRange then
-                if not closest 
-                or dist < closestDist 
-                or (closest.Name:lower():find("coin") and obj.Name:lower():find("beachball")) then
+                if not closest or dist < closestDist or (closestName:find("coin") and name:find("beachball")) then
                     closest = obj
                     closestDist = dist
+                    closestName = name
                 end
             end
         end
     end
-    return closest
-end
-
--- Di chuyển trực tiếp, liên tục
-task.spawn(function()
-    while task.wait(scanDelay) do
-        local target = getClosestItem()
-        if target then
-            hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, pickupHeight, 0))
-        end
+    if closest then
+        -- Di chuyển cực nhanh tới vật phẩm, liên tục
+        hrp.CFrame = CFrame.new(closest.Position + Vector3.new(0, pickupHeight, 0))
     end
 end)
