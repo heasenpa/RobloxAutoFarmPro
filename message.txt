@@ -1,15 +1,18 @@
--- MM2 Smooth Ultra Fast Farm
+-- MM2 Ultra Smooth Auto Farm
+-- Liên tục, cực nhanh, no-clip, ưu tiên BeachBall
+
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
+local humanoid = character:WaitForChild("Humanoid")
 
--- Cấu hình
-local scanRange = 150
-local moveSpeed = 300 -- units per second
+-- Cài đặt
+local scanRange = 200
+local speed = 300 -- units per second
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -45,16 +48,14 @@ local function addItem(obj)
         if name:find("beachball") or name:find("coin") then
             items[obj] = name
             obj.AncestryChanged:Connect(function(_, parent)
-                if not parent then
-                    if items[obj] then
-                        if items[obj]:find("beachball") then
-                            ballCount += 1
-                        else
-                            coinCount += 1
-                        end
-                        items[obj] = nil
-                        updateHUD()
+                if not parent and items[obj] then
+                    if items[obj]:find("beachball") then
+                        ballCount += 1
+                    else
+                        coinCount += 1
                     end
+                    items[obj] = nil
+                    updateHUD()
                 end
             end)
         end
@@ -66,7 +67,13 @@ for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
 
--- Vòng lặp farm mượt
+-- Thêm BodyVelocity để di chuyển mượt
+local bv = Instance.new("BodyVelocity")
+bv.MaxForce = Vector3.new(1e5,1e5,1e5)
+bv.Velocity = Vector3.new(0,0,0)
+bv.Parent = hrp
+
+-- Vòng lặp farm
 RunService.RenderStepped:Connect(function(dt)
     local closest, closestDist, closestName
     local hrpPos = hrp.Position
@@ -82,11 +89,11 @@ RunService.RenderStepped:Connect(function(dt)
             end
         end
     end
+
     if closest then
-        -- Lerp hướng về vật phẩm, mượt và cực nhanh
-        local direction = (closest.Position - hrp.Position)
-        local distance = direction.Magnitude
-        local step = math.min(moveSpeed * dt, distance)
-        hrp.CFrame = CFrame.new(hrp.Position + direction.Unit * step)
+        local dir = (closest.Position - hrp.Position).Unit
+        bv.Velocity = dir * speed
+    else
+        bv.Velocity = Vector3.new(0,0,0)
     end
 end)
