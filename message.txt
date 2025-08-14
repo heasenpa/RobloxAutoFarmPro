@@ -1,16 +1,20 @@
--- MM2 Instant Teleport Pickup
--- Ưu tiên BeachBall trước Coin, dịch chuyển tức thì
+-- MM2 Safe Smooth Farm
+-- Ưu tiên BeachBall trước Coin, di chuyển mượt mà
 
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
 -- Cấu hình
-local scanRange = 100 -- Khoảng cách tìm vật phẩm
-local pickupHeight = 2 -- Bay cao hơn một chút khi dịch chuyển
-local scanDelay = 0.05 -- Quét nhanh (giảm delay)
+local scanRange = 100
+local speed = 50 -- tốc độ di chuyển (cao nhưng vẫn mượt)
+local pickupHeight = 2
+local scanDelay = 0.05
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -26,12 +30,20 @@ counterLabel.Text = "Balls: 0 | Coins: 0"
 local ballCount, coinCount = 0, 0
 local items = {}
 
--- Cập nhật HUD
 local function updateHUD()
     counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
 end
 
--- Thêm vật phẩm vào danh sách theo dõi
+-- NoClip
+RunService.Stepped:Connect(function()
+    for _, part in ipairs(character:GetDescendants()) do
+        if part:IsA("BasePart") and part.CanCollide then
+            part.CanCollide = false
+        end
+    end
+end)
+
+-- Thêm vật phẩm
 local function addItem(obj)
     if obj:IsA("BasePart") then
         local name = obj.Name:lower()
@@ -51,15 +63,12 @@ local function addItem(obj)
     end
 end
 
--- Lắng nghe vật phẩm mới spawn
 Workspace.DescendantAdded:Connect(addItem)
-
--- Quét ban đầu
 for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
 
--- Tìm vật phẩm gần nhất (ưu tiên beachball)
+-- Lấy vật phẩm gần nhất
 local function getClosestItem()
     local closest, closestDist
     for _, obj in ipairs(items) do
@@ -78,9 +87,13 @@ local function getClosestItem()
     return closest
 end
 
--- Dịch chuyển thẳng tới vật phẩm
-local function teleportTo(pos)
-    hrp.CFrame = CFrame.new(pos)
+-- Di chuyển mượt mà tới vật phẩm
+local function moveTo(targetPos)
+    local distance = (hrp.Position - targetPos).Magnitude
+    local tweenTime = distance / speed
+    local tween = TweenService:Create(hrp, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos)})
+    tween:Play()
+    tween.Completed:Wait()
 end
 
 -- Vòng lặp chính
@@ -88,7 +101,7 @@ task.spawn(function()
     while task.wait(scanDelay) do
         local target = getClosestItem()
         if target then
-            teleportTo(target.Position + Vector3.new(0, pickupHeight, 0))
+            moveTo(target.Position + Vector3.new(0, pickupHeight, 0))
         end
     end
 end)
