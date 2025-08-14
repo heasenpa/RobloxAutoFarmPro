@@ -1,19 +1,16 @@
--- MM2 Instant Coin Pickup + NoClip
--- Chạm chính xác vào coin, xuyên tường
+-- MM2 Instant Teleport Pickup
+-- Ưu tiên BeachBall trước Coin, dịch chuyển tức thì
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
-
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
--- Cài đặt
-local scanRange = 100
-local scanDelay = 0.02
-local coinCount = 0
-local items = {}
+-- Cấu hình
+local scanRange = 100 -- Khoảng cách tìm vật phẩm
+local pickupHeight = 2 -- Bay cao hơn một chút khi dịch chuyển
+local scanDelay = 0.05 -- Quét nhanh (giảm delay)
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -24,43 +21,54 @@ counterLabel.BackgroundTransparency = 0.5
 counterLabel.BackgroundColor3 = Color3.new(0,0,0)
 counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
-counterLabel.Text = "Coins: 0"
+counterLabel.Text = "Balls: 0 | Coins: 0"
 
--- NoClip
-RunService.Stepped:Connect(function()
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-        end
-    end
-end)
+local ballCount, coinCount = 0, 0
+local items = {}
 
--- Thêm coin vào danh sách
+-- Cập nhật HUD
+local function updateHUD()
+    counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
+end
+
+-- Thêm vật phẩm vào danh sách theo dõi
 local function addItem(obj)
-    if obj:IsA("BasePart") and obj.Name:lower():find("coin") then
-        table.insert(items, obj)
-        obj.AncestryChanged:Connect(function(_, parent)
-            if not parent then
-                coinCount += 1
-                counterLabel.Text = ("Coins: %d"):format(coinCount)
-            end
-        end)
+    if obj:IsA("BasePart") then
+        local name = obj.Name:lower()
+        if name:find("beachball") or name:find("coin") then
+            table.insert(items, obj)
+            obj.AncestryChanged:Connect(function(_, parent)
+                if not parent then
+                    if name:find("beachball") then
+                        ballCount += 1
+                    elseif name:find("coin") then
+                        coinCount += 1
+                    end
+                    updateHUD()
+                end
+            end)
+        end
     end
 end
 
+-- Lắng nghe vật phẩm mới spawn
 Workspace.DescendantAdded:Connect(addItem)
+
+-- Quét ban đầu
 for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
 
--- Tìm coin gần nhất
+-- Tìm vật phẩm gần nhất (ưu tiên beachball)
 local function getClosestItem()
     local closest, closestDist
     for _, obj in ipairs(items) do
         if obj and obj.Parent then
             local dist = (hrp.Position - obj.Position).Magnitude
             if dist <= scanRange then
-                if not closest or dist < closestDist then
+                if not closest 
+                or dist < closestDist 
+                or (closest.Name:lower():find("coin") and obj.Name:lower():find("beachball")) then
                     closest = obj
                     closestDist = dist
                 end
@@ -70,12 +78,17 @@ local function getClosestItem()
     return closest
 end
 
+-- Dịch chuyển thẳng tới vật phẩm
+local function teleportTo(pos)
+    hrp.CFrame = CFrame.new(pos)
+end
+
 -- Vòng lặp chính
-RunService.Heartbeat:Connect(function()
-    local target = getClosestItem()
-    if target then
-        hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, 2, 0))
-        firetouchinterest(hrp, target, 0)
-        firetouchinterest(hrp, target, 1)
+task.spawn(function()
+    while task.wait(scanDelay) do
+        local target = getClosestItem()
+        if target then
+            teleportTo(target.Position + Vector3.new(0, pickupHeight, 0))
+        end
     end
 end)
