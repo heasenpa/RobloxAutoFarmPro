@@ -1,4 +1,5 @@
--- MM2 Pro Coin Farm (Path Optimized, NoClip, Accurate Pickup)
+-- MM2 Instant Coin Pickup + NoClip
+-- Chạm chính xác vào coin, xuyên tường
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -8,26 +9,22 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 
--- Config
-local SCAN_RANGE = 150 -- khoảng quét
-local SCAN_DELAY = 0.015
-local MOVE_SPEED = 100 -- tốc độ bay
-local PICKUP_RADIUS = 3
+-- Cài đặt
+local scanRange = 100
+local scanDelay = 0.02
+local coinCount = 0
+local items = {}
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
 local counterLabel = Instance.new("TextLabel", screenGui)
-counterLabel.Size = UDim2.new(0, 220, 0, 40)
+counterLabel.Size = UDim2.new(0, 200, 0, 50)
 counterLabel.Position = UDim2.new(0, 10, 0, 10)
-counterLabel.BackgroundTransparency = 0.4
-counterLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-counterLabel.TextColor3 = Color3.new(1, 1, 0)
-counterLabel.Font = Enum.Font.GothamBold
+counterLabel.BackgroundTransparency = 0.5
+counterLabel.BackgroundColor3 = Color3.new(0,0,0)
+counterLabel.TextColor3 = Color3.new(1,1,1)
 counterLabel.TextScaled = true
 counterLabel.Text = "Coins: 0"
-
-local coinCount = 0
-local coins = {}
 
 -- NoClip
 RunService.Stepped:Connect(function()
@@ -38,10 +35,10 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- Thêm coin khi spawn
-local function trackCoin(obj)
+-- Thêm coin vào danh sách
+local function addItem(obj)
     if obj:IsA("BasePart") and obj.Name:lower():find("coin") then
-        table.insert(coins, obj)
+        table.insert(items, obj)
         obj.AncestryChanged:Connect(function(_, parent)
             if not parent then
                 coinCount += 1
@@ -51,51 +48,34 @@ local function trackCoin(obj)
     end
 end
 
-Workspace.DescendantAdded:Connect(trackCoin)
+Workspace.DescendantAdded:Connect(addItem)
 for _, obj in ipairs(Workspace:GetDescendants()) do
-    trackCoin(obj)
+    addItem(obj)
 end
 
--- Lấy coin gần nhất
-local function getClosestCoin()
+-- Tìm coin gần nhất
+local function getClosestItem()
     local closest, closestDist
-    for i, coin in ipairs(coins) do
-        if coin and coin.Parent then
-            local dist = (hrp.Position - coin.Position).Magnitude
-            if dist <= SCAN_RANGE then
+    for _, obj in ipairs(items) do
+        if obj and obj.Parent then
+            local dist = (hrp.Position - obj.Position).Magnitude
+            if dist <= scanRange then
                 if not closest or dist < closestDist then
-                    closest = coin
+                    closest = obj
                     closestDist = dist
                 end
-            else
-                coins[i] = nil
             end
-        else
-            coins[i] = nil
         end
     end
     return closest
 end
 
--- Pickup
-local function pickupCoin(coin)
-    firetouchinterest(hrp, coin, 0)
-    firetouchinterest(hrp, coin, 1)
-end
-
--- Loop
-task.spawn(function()
-    while task.wait(SCAN_DELAY) do
-        local coin = getClosestCoin()
-        if coin then
-            local dist = (hrp.Position - coin.Position).Magnitude
-            if dist > PICKUP_RADIUS then
-                local targetPos = coin.Position + Vector3.new(0, 1, 0)
-                local dir = (targetPos - hrp.Position).Unit
-                hrp.CFrame = CFrame.new(hrp.Position + dir * MOVE_SPEED * SCAN_DELAY, targetPos)
-            else
-                pickupCoin(coin)
-            end
-        end
+-- Vòng lặp chính
+RunService.Heartbeat:Connect(function()
+    local target = getClosestItem()
+    if target then
+        hrp.CFrame = CFrame.new(target.Position + Vector3.new(0, 2, 0))
+        firetouchinterest(hrp, target, 0)
+        firetouchinterest(hrp, target, 1)
     end
 end)
