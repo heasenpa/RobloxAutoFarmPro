@@ -1,4 +1,4 @@
--- Ultra Fast Continuous Farm (không delay)
+-- MM2 Smooth Ultra Fast Farm
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
@@ -9,7 +9,7 @@ local hrp = character:WaitForChild("HumanoidRootPart")
 
 -- Cấu hình
 local scanRange = 150
-local pickupHeight = 2
+local moveSpeed = 300 -- units per second
 
 -- HUD
 local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
@@ -24,6 +24,10 @@ counterLabel.Text = "Balls: 0 | Coins: 0"
 
 local ballCount, coinCount = 0,0
 local items = {}
+
+local function updateHUD()
+    counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
+end
 
 -- No-clip
 RunService.Stepped:Connect(function()
@@ -49,7 +53,7 @@ local function addItem(obj)
                             coinCount += 1
                         end
                         items[obj] = nil
-                        counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
+                        updateHUD()
                     end
                 end
             end)
@@ -62,8 +66,8 @@ for _, obj in ipairs(Workspace:GetDescendants()) do
     addItem(obj)
 end
 
--- Vòng lặp farm liên tục
-RunService.RenderStepped:Connect(function()
+-- Vòng lặp farm mượt
+RunService.RenderStepped:Connect(function(dt)
     local closest, closestDist, closestName
     local hrpPos = hrp.Position
     for obj, name in pairs(items) do
@@ -79,7 +83,10 @@ RunService.RenderStepped:Connect(function()
         end
     end
     if closest then
-        -- Di chuyển cực nhanh tới vật phẩm, liên tục
-        hrp.CFrame = CFrame.new(closest.Position + Vector3.new(0, pickupHeight, 0))
+        -- Lerp hướng về vật phẩm, mượt và cực nhanh
+        local direction = (closest.Position - hrp.Position)
+        local distance = direction.Magnitude
+        local step = math.min(moveSpeed * dt, distance)
+        hrp.CFrame = CFrame.new(hrp.Position + direction.Unit * step)
     end
 end)
