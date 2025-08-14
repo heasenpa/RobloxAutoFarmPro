@@ -1,99 +1,79 @@
--- MM2 Ultra Smooth Auto Farm
--- Liên tục, cực nhanh, no-clip, ưu tiên BeachBall
-
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-
 local player = Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
-local humanoid = character:WaitForChild("Humanoid")
+local playerGui = player:WaitForChild("PlayerGui")
 
--- Cài đặt
-local scanRange = 200
-local speed = 300 -- units per second
+-- Tạo ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AutoFarmGUI"
+screenGui.Parent = playerGui
 
--- HUD
-local screenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-local counterLabel = Instance.new("TextLabel", screenGui)
-counterLabel.Size = UDim2.new(0,200,0,50)
-counterLabel.Position = UDim2.new(0,10,0,10)
-counterLabel.BackgroundTransparency = 0.5
-counterLabel.BackgroundColor3 = Color3.new(0,0,0)
-counterLabel.TextColor3 = Color3.new(1,1,1)
-counterLabel.TextScaled = true
-counterLabel.Text = "Balls: 0 | Coins: 0"
+-- Frame chính
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0,250,0,300)
+mainFrame.Position = UDim2.new(0,50,0,50)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
 
-local ballCount, coinCount = 0,0
-local items = {}
+-- Tiêu đề
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,0,0,30)
+title.BackgroundTransparency = 1
+title.Text = "Coin/Beach Balls Autofarm"
+title.TextColor3 = Color3.new(1,1,1)
+title.TextScaled = true
+title.Parent = mainFrame
 
-local function updateHUD()
-    counterLabel.Text = ("Balls: %d | Coins: %d"):format(ballCount, coinCount)
-end
+-- Button Auto Farm
+local autoFarmBtn = Instance.new("TextButton")
+autoFarmBtn.Size = UDim2.new(0,200,0,40)
+autoFarmBtn.Position = UDim2.new(0,25,0,50)
+autoFarmBtn.Text = "Auto Farm: OFF"
+autoFarmBtn.Parent = mainFrame
 
--- No-clip
-RunService.Stepped:Connect(function()
-    for _, part in ipairs(character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.CanCollide = false
-        end
-    end
-end)
+-- Button Anti-AFK
+local afkBtn = Instance.new("TextButton")
+afkBtn.Size = UDim2.new(0,200,0,40)
+afkBtn.Position = UDim2.new(0,25,0,100)
+afkBtn.Text = "Anti-AFK: OFF"
+afkBtn.Parent = mainFrame
 
--- Thêm vật phẩm
-local function addItem(obj)
-    if obj:IsA("BasePart") then
-        local name = obj.Name:lower()
-        if name:find("beachball") or name:find("coin") then
-            items[obj] = name
-            obj.AncestryChanged:Connect(function(_, parent)
-                if not parent and items[obj] then
-                    if items[obj]:find("beachball") then
-                        ballCount += 1
-                    else
-                        coinCount += 1
-                    end
-                    items[obj] = nil
-                    updateHUD()
-                end
-            end)
-        end
-    end
-end
+-- Speed Slider (thông số giả lập)
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(0,200,0,30)
+speedLabel.Position = UDim2.new(0,25,0,150)
+speedLabel.Text = "Tween Speed: 15"
+speedLabel.TextColor3 = Color3.new(1,1,1)
+speedLabel.BackgroundTransparency = 1
+speedLabel.TextScaled = true
+speedLabel.Parent = mainFrame
 
-Workspace.DescendantAdded:Connect(addItem)
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    addItem(obj)
-end
+-- Counter Text
+local counter = Instance.new("TextLabel")
+counter.Size = UDim2.new(0,200,0,30)
+counter.Position = UDim2.new(0,25,0,190)
+counter.Text = "Coins/Balls Collected: 0"
+counter.TextColor3 = Color3.new(1,1,1)
+counter.BackgroundTransparency = 1
+counter.TextScaled = true
+counter.Parent = mainFrame
 
--- Thêm BodyVelocity để di chuyển mượt
-local bv = Instance.new("BodyVelocity")
-bv.MaxForce = Vector3.new(1e5,1e5,1e5)
-bv.Velocity = Vector3.new(0,0,0)
-bv.Parent = hrp
+-- Time Active
+local timeLabel = Instance.new("TextLabel")
+timeLabel.Size = UDim2.new(0,200,0,30)
+timeLabel.Position = UDim2.new(0,25,0,220)
+timeLabel.Text = "Time Active: 0s"
+timeLabel.TextColor3 = Color3.new(1,1,1)
+timeLabel.BackgroundTransparency = 1
+timeLabel.TextScaled = true
+timeLabel.Parent = mainFrame
 
--- Vòng lặp farm
-RunService.RenderStepped:Connect(function(dt)
-    local closest, closestDist, closestName
-    local hrpPos = hrp.Position
-    for obj, name in pairs(items) do
-        if obj.Parent then
-            local dist = (hrpPos - obj.Position).Magnitude
-            if dist <= scanRange then
-                if not closest or dist < closestDist or (closestName:find("coin") and name:find("beachball")) then
-                    closest = obj
-                    closestDist = dist
-                    closestName = name
-                end
-            end
-        end
-    end
-
-    if closest then
-        local dir = (closest.Position - hrp.Position).Unit
-        bv.Velocity = dir * speed
-    else
-        bv.Velocity = Vector3.new(0,0,0)
-    end
-end)
+-- Estimate Coins/Hour
+local estLabel = Instance.new("TextLabel")
+estLabel.Size = UDim2.new(0,200,0,30)
+estLabel.Position = UDim2.new(0,25,0,250)
+estLabel.Text = "Est. Coins/Hour: 0"
+estLabel.TextColor3 = Color3.new(1,1,1)
+estLabel.BackgroundTransparency = 1
+estLabel.TextScaled = true
+estLabel.Parent = mainFrame
