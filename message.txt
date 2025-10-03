@@ -1,85 +1,114 @@
--- Simple AutoFarm for Codex Mobile
+-- AutoFarm Hybrid (MoveTo + Tween bay nhẹ nếu cần)
+-- Test trên Codex Mobile
+
 local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
--- Xóa GUI cũ nếu có
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI") then
-    LocalPlayer.PlayerGui.FarmGUI:Destroy()
+local player = Players.LocalPlayer
+local hrp, humanoid
+
+-- GUI nhỏ
+if player.PlayerGui:FindFirstChild("HybridFarm") then
+    player.PlayerGui.HybridFarm:Destroy()
 end
+local gui = Instance.new("ScreenGui", player.PlayerGui)
+gui.Name = "HybridFarm"
 
--- GUI nhỏ gọn
-local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI"
-gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-gui.ResetOnSpawn = false
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0,160,0,70)
+frame.Position = UDim2.new(0,10,0,200)
+frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 180, 0, 100)
-frame.Position = UDim2.new(0, 10, 0, 250)
-frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Parent = gui
+local btn = Instance.new("TextButton", frame)
+btn.Size = UDim2.new(1,-20,0,40)
+btn.Position = UDim2.new(0,10,0,15)
+btn.Text = "Start"
+btn.BackgroundColor3 = Color3.fromRGB(80,160,80)
+btn.TextColor3 = Color3.new(1,1,1)
 
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(1, -20, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0, 10)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
-toggleBtn.Text = "Start Farm"
-toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 18
-toggleBtn.Parent = frame
+local running = false
 
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -20, 0, 30)
-status.Position = UDim2.new(0, 10, 0, 60)
-status.BackgroundTransparency = 1
-status.Text = "Status: OFF"
-status.TextColor3 = Color3.fromRGB(255,100,100)
-status.Font = Enum.Font.SourceSans
-status.TextSize = 16
-status.Parent = frame
+local function updateChar()
+    local c = player.Character
+    if not c then return end
+    humanoid = c:FindFirstChildOfClass("Humanoid")
+    hrp = c:FindFirstChild("HumanoidRootPart")
+end
+updateChar()
+player.CharacterAdded:Connect(function()
+    task.wait(1)
+    updateChar()
+end)
 
--- Farm logic
-local farming = false
-
+-- tìm coin
 local function getCoins()
-    for _, map in pairs(workspace:GetChildren()) do
-        if map:FindFirstChild("CoinContainer") then
-            return map.CoinContainer
-        end
-    end
-end
-
-local function autoFarm()
-    while farming do
-        local container = getCoins()
-        if container and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            for _, coin in pairs(container:GetChildren()) do
-                if coin:IsA("BasePart") and farming then
-                    LocalPlayer.Character:PivotTo(coin.CFrame)
-                    task.wait(0.3)
-                end
+    local coins = {}
+    for _,v in pairs(workspace:GetDescendants()) do
+        if v:IsA("TouchTransmitter") and v.Parent and v.Parent:IsA("BasePart") then
+            table.insert(coins, v.Parent)
+        elseif v:IsA("BasePart") then
+            local n = v.Name:lower()
+            if n:find("coin") or n:find("ball") or n:find("token") then
+                table.insert(coins, v)
             end
         end
-        task.wait(0.5)
+    end
+    return coins
+end
+
+-- di chuyển hybrid
+local function moveToCoin(coin)
+    if not humanoid or not hrp or not coin then return end
+    local distance = (hrp.Position - coin.Position).Magnitude
+    if distance < 6 then return end
+
+    -- nếu coin cao hơn nhiều -> dùng Tween bay
+    if math.abs(hrp.Position.Y - coin.Position.Y) > 6 then
+        local tween = TweenService:Create(hrp, TweenInfo.new(distance/40, Enum.EasingStyle.Linear), {CFrame = CFrame.new(coin.Position + Vector3.new(0,3,0))})
+        tween:Play()
+        tween.Completed:Wait()
+    else
+        humanoid:MoveTo(coin.Position)
+        humanoid.MoveToFinished:Wait(2)
     end
 end
 
-toggleBtn.MouseButton1Click:Connect(function()
-    farming = not farming
-    if farming then
-        toggleBtn.Text = "Stop Farm"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
-        status.Text = "Status: ON"
-        status.TextColor3 = Color3.fromRGB(100,255,100)
-        task.spawn(autoFarm)
+-- vòng lặp farm
+local function farmLoop()
+    while running do
+        updateChar()
+        if hrp then
+            local coins = getCoins()
+            local nearest, nd = nil, math.huge
+            for _,c in pairs(coins) do
+                local ok,pos = pcall(function() return c.Position end)
+                if ok and pos then
+                    local d = (hrp.Position - pos).Magnitude
+                    if d < nd then
+                        nd = d; nearest = c
+                    end
+                end
+            end
+            if nearest then
+                moveToCoin(nearest)
+            end
+        end
+        task.wait(0.4)
+    end
+end
+
+-- bật / tắt
+btn.MouseButton1Click:Connect(function()
+    running = not running
+    if running then
+        btn.Text = "Stop"
+        btn.BackgroundColor3 = Color3.fromRGB(180,60,60)
+        task.spawn(farmLoop)
     else
-        toggleBtn.Text = "Start Farm"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
-        status.Text = "Status: OFF"
-        status.TextColor3 = Color3.fromRGB(255,100,100)
+        btn.Text = "Start"
+        btn.BackgroundColor3 = Color3.fromRGB(80,160,80)
     end
 end)
 
+print("[Hybrid AutoFarm Loaded]")
