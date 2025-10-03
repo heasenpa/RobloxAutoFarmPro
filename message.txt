@@ -1,22 +1,22 @@
--- Bảng 4fix - AutoFarm (Tween mượt, quét coin liên tục)
+-- Bảng 1 - Simple AutoFarm (Tween di chuyển chậm tới coin) cho Codex Mobile
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Xóa GUI cũ nếu có
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI4") then
-    LocalPlayer.PlayerGui.FarmGUI4:Destroy()
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI1") then
+    LocalPlayer.PlayerGui.FarmGUI1:Destroy()
 end
 
--- GUI
+-- GUI nhỏ gọn
 local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI4"
+gui.Name = "FarmGUI1"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, 180, 0, 120)
-frame.Position = UDim2.new(0, 400, 0, 250) -- dịch sang phải
+frame.Position = UDim2.new(0, 10, 0, 250)
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -25,8 +25,8 @@ frame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 20)
 title.BackgroundTransparency = 1
-title.Text = "Bảng 4fix - AutoFarm"
-title.TextColor3 = Color3.fromRGB(0, 200, 255)
+title.Text = "Bảng 1 - AutoFarm"
+title.TextColor3 = Color3.fromRGB(255, 255, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
 title.Parent = frame
@@ -53,10 +53,8 @@ status.Parent = frame
 
 -- Farm logic
 local farming = false
-local coinConnections = {}
 
--- Lấy container coin
-local function getCoinContainer()
+local function getCoins()
     for _, map in pairs(workspace:GetChildren()) do
         if map:FindFirstChild("CoinContainer") then
             return map.CoinContainer
@@ -64,66 +62,37 @@ local function getCoinContainer()
     end
 end
 
--- Tìm coin gần nhất, bỏ coin biến mất
-local function findNearestCoin()
-    local character = LocalPlayer.Character
-    if not character then return nil end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-
-    local nearest, dist = nil, math.huge
-    local container = getCoinContainer()
-    if not container then return nil end
-
-    for _, coin in pairs(container:GetChildren()) do
-        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
-            local d = (hrp.Position - coin.Position).Magnitude
-            if d < dist then
-                dist = d
-                nearest = coin
-            end
-        end
-    end
-    return nearest
-end
-
--- Bay mượt tới coin, không chặn loop
-local function moveToCoin(coin)
+local function moveToPartSlowly(part)
     local character = LocalPlayer.Character
     if not character then return end
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
-    if not coin or not coin.Parent or not coin:IsDescendantOf(workspace) then return end
+    if not part or not part.Parent or not part:IsDescendantOf(workspace) then return end
 
-    local distance = (hrp.Position - coin.Position).Magnitude
+    local distance = (hrp.Position - part.Position).Magnitude
     local speed = 20
-    local time = math.clamp(distance / speed, 0.5, 3)
+    local time = math.clamp(distance / speed, 0.5, 5)
 
-    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = coin.CFrame + Vector3.new(0,3,0)})
+    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = part.CFrame + Vector3.new(0,3,0)})
     tween:Play()
-    -- Khi tween hoàn thành, tự động remove coin nếu biến mất
-    tween.Completed:Connect(function()
-        if not coin.Parent or not coin:IsDescendantOf(workspace) then
-            coinConnections[coin] = nil
-        end
-    end)
+    tween.Completed:Wait()
 end
 
--- AutoFarm
 local function autoFarm()
     while farming do
-        local coin = findNearestCoin()
-        if coin then
-            if not coinConnections[coin] then
-                coinConnections[coin] = true
-                moveToCoin(coin)
+        local container = getCoins()
+        if container and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            for _, coin in pairs(container:GetChildren()) do
+                if not farming then break end
+                if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
+                    moveToPartSlowly(coin)
+                end
             end
         end
-        task.wait(0.05) -- quét coin cực nhanh
+        task.wait(0.2)
     end
 end
 
--- Nút bật/tắt farm
 toggleBtn.MouseButton1Click:Connect(function()
     farming = not farming
     if farming then
