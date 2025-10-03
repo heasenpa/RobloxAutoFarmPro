@@ -1,7 +1,12 @@
--- AutoFarm Smooth Fly (Mobile Codex Friendly)
+-- AutoFarm Smooth Fly (Heartbeat version, no tele)
 -- by ChatGPT
 
--- GUI nhỏ gọn
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local root = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+
+-- GUI
 local ScreenGui = Instance.new("ScreenGui")
 local Frame = Instance.new("Frame")
 local Button = Instance.new("TextButton")
@@ -19,43 +24,10 @@ Button.Font = Enum.Font.SourceSansBold
 Button.Text = "Start Farm"
 Button.Parent = Frame
 
--- Script farm
-local RunService = game:GetService("RunService")
-local Tweening = false
-local connection
+-- AutoFarm logic
+local farming = false
+local flyConn
 
--- Tạo part bay
-local flyPart = Instance.new("Part")
-flyPart.Size = Vector3.new(2,1,2)
-flyPart.Anchored = true
-flyPart.Transparency = 1
-flyPart.CanCollide = false
-flyPart.Parent = workspace
-
-local root = game.Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
-root.CFrame = root.CFrame + Vector3.new(0,3,0)
-local weld = Instance.new("WeldConstraint")
-weld.Part0 = flyPart
-weld.Part1 = root
-weld.Parent = flyPart
-
--- Hàm bay mượt tới target
-local function smoothFlyTo(targetPos)
-    if connection then connection:Disconnect() end
-    connection = RunService.Heartbeat:Connect(function(dt)
-        local currentPos = flyPart.Position
-        local direction = (targetPos - currentPos)
-        local distance = direction.Magnitude
-        if distance < 4 then
-            connection:Disconnect()
-        else
-            local move = direction.Unit * (60 * dt) -- tốc độ
-            flyPart.CFrame = CFrame.new(currentPos + move)
-        end
-    end)
-end
-
--- Hàm tìm coin gần nhất
 local function getNearestCoin()
     local nearest, dist = nil, math.huge
     for _,v in pairs(workspace:GetDescendants()) do
@@ -70,33 +42,46 @@ local function getNearestCoin()
     return nearest
 end
 
--- Vòng farm
+local function smoothFlyTo(targetPos)
+    if flyConn then flyConn:Disconnect() end
+    flyConn = RunService.Heartbeat:Connect(function(dt)
+        if not farming then flyConn:Disconnect() return end
+        if not root or not root.Parent then return end
+
+        local currentPos = root.Position
+        local direction = (targetPos - currentPos)
+        local distance = direction.Magnitude
+        if distance < 4 then
+            flyConn:Disconnect()
+        else
+            local move = direction.Unit * (60 * dt) -- speed 60
+            root.CFrame = CFrame.new(currentPos + move)
+        end
+    end)
+end
+
 local function startFarm()
-    Tweening = true
-    while Tweening do
+    farming = true
+    while farming do
         local coin = getNearestCoin()
         if coin then
             smoothFlyTo(coin.Position + Vector3.new(0,3,0))
         end
-        task.wait(1)
+        task.wait(0.5)
     end
 end
 
 local function stopFarm()
-    Tweening = false
-    if connection then connection:Disconnect() end
+    farming = false
+    if flyConn then flyConn:Disconnect() end
 end
 
--- Nút bấm
-local farming = false
 Button.MouseButton1Click:Connect(function()
     if not farming then
-        farming = true
         Button.Text = "Stop Farm"
         Button.BackgroundColor3 = Color3.fromRGB(200,80,80)
         startFarm()
     else
-        farming = false
         Button.Text = "Start Farm"
         Button.BackgroundColor3 = Color3.fromRGB(80,170,80)
         stopFarm()
