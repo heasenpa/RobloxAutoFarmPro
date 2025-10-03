@@ -1,4 +1,4 @@
--- Bảng 3fix v5 - Bay tới coin gần nhất, không đổi hướng lung tung, reset khi balo đầy
+-- Bảng 3fix v2 - Bay tới coin gần nhất, không đổi hướng lung tung, reset khi full coin
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
@@ -24,7 +24,7 @@ frame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 20)
 title.BackgroundTransparency = 1
-title.Text = "Bảng 3fix v5"
+title.Text = "Bảng 3fix v2"
 title.TextColor3 = Color3.fromRGB(255, 255, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
@@ -52,6 +52,7 @@ status.Parent = frame
 
 -- Farm logic
 local farming = false
+local canReset = true -- cooldown để tránh reset liên tục
 
 local function getCoins()
     for _, map in pairs(workspace:GetChildren()) do
@@ -59,6 +60,7 @@ local function getCoins()
             return map.CoinContainer
         end
     end
+    return nil
 end
 
 local function findNearestCoin()
@@ -96,16 +98,16 @@ local function moveToCoin(coin)
     local finished = false
     tween.Completed:Connect(function()
         finished = true
-        if coin and coin.Parent then
-            coin:Destroy()
-        end
+        -- Coin game tự thu, nên không cần destroy ở đây nếu không muốn
+        -- if coin and coin.Parent then
+        --     coin:Destroy()
+        -- end
     end)
     tween:Play()
 
     repeat task.wait() until finished
 end
 
--- Kiểm tra balo đã đầy chưa bằng cách xem coin trên map còn hiển thị không
 local function isBagFull()
     local container = getCoins()
     if not container then return false end
@@ -115,21 +117,23 @@ local function isBagFull()
             visibleCoinsCount = visibleCoinsCount + 1
         end
     end
+    -- print("Visible coins:", visibleCoinsCount) -- dùng debug nếu cần
     return visibleCoinsCount == 0
 end
 
 local function autoFarm()
     while farming do
-        if isBagFull() then
+        if isBagFull() and canReset then
+            canReset = false
             status.Text = "Status: FULL - Resetting..."
             status.TextColor3 = Color3.fromRGB(255, 150, 0)
-            -- Reset nhân vật
             if LocalPlayer.Character then
                 LocalPlayer.Character:BreakJoints()
             end
-            task.wait(5) -- Đợi respawn
-            status.Text = "Status: ON"
-            status.TextColor3 = Color3.fromRGB(100,255,100)
+            task.delay(6, function()
+                canReset = true
+            end)
+            task.wait(1)
         else
             local coin = findNearestCoin()
             if coin then
