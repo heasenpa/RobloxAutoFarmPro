@@ -1,22 +1,20 @@
--- Bảng 3fix v5 - Tự nhận diện Inventory, bay tới coin
+-- Bảng 3fix v5 - Bay tới coin gần nhất, không đổi hướng lung tung, reset khi balo đầy
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
--- Xóa GUI cũ
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3v5") then
-    LocalPlayer.PlayerGui.FarmGUI3v5:Destroy()
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3") then
+    LocalPlayer.PlayerGui.FarmGUI3:Destroy()
 end
 
 -- GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI3v5"
+gui.Name = "FarmGUI3"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 220, 0, 160)
+frame.Size = UDim2.new(0, 180, 0, 120)
 frame.Position = UDim2.new(0, 400, 0, 250)
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
@@ -43,8 +41,8 @@ toggleBtn.TextSize = 18
 toggleBtn.Parent = frame
 
 local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -20, 0, 20)
-status.Position = UDim2.new(0, 10, 0, 75)
+status.Size = UDim2.new(1, -20, 0, 30)
+status.Position = UDim2.new(0, 10, 0, 80)
 status.BackgroundTransparency = 1
 status.Text = "Status: OFF"
 status.TextColor3 = Color3.fromRGB(255,100,100)
@@ -52,45 +50,8 @@ status.Font = Enum.Font.SourceSans
 status.TextSize = 16
 status.Parent = frame
 
-local bagLabel = Instance.new("TextLabel")
-bagLabel.Size = UDim2.new(1, -20, 0, 20)
-bagLabel.Position = UDim2.new(0, 10, 0, 100)
-bagLabel.BackgroundTransparency = 1
-bagLabel.Text = "Balo: 0/40"
-bagLabel.TextColor3 = Color3.fromRGB(255,255,255)
-bagLabel.Font = Enum.Font.SourceSans
-bagLabel.TextSize = 16
-bagLabel.Parent = frame
-
 -- Farm logic
 local farming = false
-local MAX_COINS = 40
-
--- Tìm Inventory tự động
-local function getInventory()
-    for _, obj in pairs(LocalPlayer:GetChildren()) do
-        if obj:IsA("Folder") or obj:IsA("Model") then
-            if #obj:GetChildren() > 0 then
-                return obj
-            end
-        end
-    end
-    for _, obj in pairs(ReplicatedStorage:GetChildren()) do
-        if obj:IsA("Folder") or obj:IsA("Model") then
-            if #obj:GetChildren() > 0 then
-                return obj
-            end
-        end
-    end
-end
-
-local function getBagCount()
-    local inv = getInventory()
-    if inv then
-        return #inv:GetChildren()
-    end
-    return 0
-end
 
 local function getCoins()
     for _, map in pairs(workspace:GetChildren()) do
@@ -110,7 +71,7 @@ local function findNearestCoin()
 
     local nearest, dist = nil, math.huge
     for _, coin in pairs(container:GetChildren()) do
-        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
+        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) and coin.Transparency < 1 then
             local d = (hrp.Position - coin.Position).Magnitude
             if d < dist then
                 dist = d
@@ -119,13 +80,6 @@ local function findNearestCoin()
         end
     end
     return nearest
-end
-
-local function resetCharacter()
-    local character = LocalPlayer.Character
-    if character and character:FindFirstChild("Humanoid") then
-        character:BreakJoints()
-    end
 end
 
 local function moveToCoin(coin)
@@ -147,23 +101,41 @@ local function moveToCoin(coin)
         end
     end)
     tween:Play()
+
     repeat task.wait() until finished
+end
+
+-- Kiểm tra balo đã đầy chưa bằng cách xem coin trên map còn hiển thị không
+local function isBagFull()
+    local container = getCoins()
+    if not container then return false end
+    local visibleCoinsCount = 0
+    for _, coin in pairs(container:GetChildren()) do
+        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) and coin.Transparency < 1 then
+            visibleCoinsCount = visibleCoinsCount + 1
+        end
+    end
+    return visibleCoinsCount == 0
 end
 
 local function autoFarm()
     while farming do
-        local bagCount = getBagCount()
-        bagLabel.Text = "Balo: "..bagCount.."/"..MAX_COINS
-        if bagCount >= MAX_COINS then
-            status.Text = "Balo full! Reset..."
-            resetCharacter()
-            task.wait(3)
+        if isBagFull() then
+            status.Text = "Status: FULL - Resetting..."
+            status.TextColor3 = Color3.fromRGB(255, 150, 0)
+            -- Reset nhân vật
+            if LocalPlayer.Character then
+                LocalPlayer.Character:BreakJoints()
+            end
+            task.wait(5) -- Đợi respawn
+            status.Text = "Status: ON"
+            status.TextColor3 = Color3.fromRGB(100,255,100)
         else
             local coin = findNearestCoin()
             if coin then
                 moveToCoin(coin)
             else
-                task.wait(0.05)
+                task.wait(0.1)
             end
         end
     end
