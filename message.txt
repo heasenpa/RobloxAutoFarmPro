@@ -1,4 +1,4 @@
--- AutoFarm GUI nhỏ gọn
+-- AutoFarm GUI nhỏ gọn (draggable)
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
@@ -18,6 +18,8 @@ frame.Size = UDim2.new(0, 200, 0, 120)
 frame.Position = UDim2.new(1, -210, 1, -130) -- góc phải dưới
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true -- Cho phép kéo bảng
 frame.Parent = gui
 
 -- Tiêu đề
