@@ -1,284 +1,114 @@
--- AutoFarm bằng Pathfinding (MoveTo) - mobile friendly
--- Mô tả: tìm coin (TouchTransmitter / tên), tạo path tới coin, dùng Humanoid:MoveTo đi theo từng waypoint.
--- Dán và chạy trong executor (Codex / mobile). Nếu lỗi, copy console/notify để mình sửa.
+-- AutoFarm Hybrid (MoveTo + Tween bay nhẹ nếu cần)
+-- Test trên Codex Mobile
 
 local Players = game:GetService("Players")
-local PathfindingService = game:GetService("PathfindingService")
+local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local StarterGui = game:GetService("StarterGui")
 
 local player = Players.LocalPlayer
+local hrp, humanoid
 
--- ===== GUI nhỏ gọn =====
-if player.PlayerGui:FindFirstChild("PFarmGUI") then
-    player.PlayerGui.PFarmGUI:Destroy()
+-- GUI nhỏ
+if player.PlayerGui:FindFirstChild("HybridFarm") then
+    player.PlayerGui.HybridFarm:Destroy()
 end
+local gui = Instance.new("ScreenGui", player.PlayerGui)
+gui.Name = "HybridFarm"
 
-local screen = Instance.new("ScreenGui")
-screen.Name = "PFarmGUI"
-screen.Parent = player:WaitForChild("PlayerGui")
-
-local frame = Instance.new("Frame", screen)
-frame.Size = UDim2.new(0, 180, 0, 88)
-frame.Position = UDim2.new(0, 10, 0, 220)
-frame.BackgroundColor3 = Color3.fromRGB(36,36,36)
-frame.BorderSizePixel = 0
-
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1,0,0,24)
-title.BackgroundTransparency = 1
-title.Text = "AutoFarm (Path)"
-title.TextColor3 = Color3.fromRGB(255,255,255)
-title.Font = Enum.Font.SourceSansBold
-title.TextSize = 14
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0,160,0,70)
+frame.Position = UDim2.new(0,10,0,200)
+frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
 
 local btn = Instance.new("TextButton", frame)
-btn.Size = UDim2.new(1,-20,0,36)
-btn.Position = UDim2.new(0,10,0,28)
+btn.Size = UDim2.new(1,-20,0,40)
+btn.Position = UDim2.new(0,10,0,15)
 btn.Text = "Start"
-btn.Font = Enum.Font.SourceSansBold
-btn.TextSize = 16
 btn.BackgroundColor3 = Color3.fromRGB(80,160,80)
+btn.TextColor3 = Color3.new(1,1,1)
 
-local status = Instance.new("TextLabel", frame)
-status.Size = UDim2.new(1,-20,0,20)
-status.Position = UDim2.new(0,10,0,66)
-status.BackgroundTransparency = 1
-status.Text = "Status: OFF"
-status.TextColor3 = Color3.fromRGB(255,120,120)
-status.Font = Enum.Font.SourceSans
-status.TextSize = 14
-
--- ===== Config =====
-local CONFIG = {
-    ScanInterval = 0.6,         -- thời gian giữa mỗi vòng scan coin
-    MaxSearchDistance = 1000,   -- max khoảng cách tìm coin (studs)
-    WaypointTimeout = 6,        -- timeout cho mỗi waypoint (giây)
-    PickupDelay = 0.25,         -- đợi khi tới coin để server register pickup
-    PathAgentParameters = {     -- tuỳ chỉnh Path (có thể để nil để dùng mặc định)
-        AgentRadius = 2,
-        AgentHeight = 5,
-        AgentCanJump = true,
-    }
-}
-
--- ===== State =====
 local running = false
-local humanoid = nil
-local hrp = nil
-local charConn = nil
 
-local function notify(t, m, d)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {Title = tostring(t), Text = tostring(m), Duration = d or 3})
-    end)
+local function updateChar()
+    local c = player.Character
+    if not c then return end
+    humanoid = c:FindFirstChildOfClass("Humanoid")
+    hrp = c:FindFirstChild("HumanoidRootPart")
 end
-
-local function updateCharacterRefs()
-    local char = player.Character
-    if not char then
-        humanoid = nil; hrp = nil; return
-    end
-    humanoid = char:FindFirstChildOfClass("Humanoid")
-    hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("RootPart")
-end
-
--- khi respawn
+updateChar()
 player.CharacterAdded:Connect(function()
-    updateCharacterRefs()
-    -- small delay để các object load
-    task.wait(0.6)
+    task.wait(1)
+    updateChar()
 end)
-updateCharacterRefs()
 
--- ===== Tìm coin =====
-local function findAllCoins()
-    local out = {}
-    -- ưu tiên TouchTransmitter
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("TouchTransmitter") and obj.Parent and obj.Parent:IsA("BasePart") then
-            table.insert(out, obj.Parent)
-        end
-    end
-    -- nếu ít, tìm theo tên (fallback)
-    if #out == 0 then
-        for _, part in pairs(workspace:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local n = tostring(part.Name):lower()
-                if n:find("coin") or n:find("beach") or n:find("ball") or n:find("token") then
-                    table.insert(out, part)
-                end
+-- tìm coin
+local function getCoins()
+    local coins = {}
+    for _,v in pairs(workspace:GetDescendants()) do
+        if v:IsA("TouchTransmitter") and v.Parent and v.Parent:IsA("BasePart") then
+            table.insert(coins, v.Parent)
+        elseif v:IsA("BasePart") then
+            local n = v.Name:lower()
+            if n:find("coin") or n:find("ball") or n:find("token") then
+                table.insert(coins, v)
             end
         end
     end
-    -- dedupe
-    local seen = {}
-    local dedup = {}
-    for _, p in ipairs(out) do
-        if p and p.Parent and not seen[p] then
-            seen[p] = true
-            table.insert(dedup, p)
-        end
-    end
-    return dedup
+    return coins
 end
 
--- ===== Path -> follow waypoints =====
-local function followPathTo(targetPart)
-    if not humanoid or not hrp or not targetPart then return false, "no humanoid/hrp/target" end
-    local targetPos
-    local ok, posErr = pcall(function() targetPos = targetPart.Position end)
-    if not ok or not targetPos then return false, "target pos invalid" end
+-- di chuyển hybrid
+local function moveToCoin(coin)
+    if not humanoid or not hrp or not coin then return end
+    local distance = (hrp.Position - coin.Position).Magnitude
+    if distance < 6 then return end
 
-    local path
-    local success, computeErr = pcall(function()
-        path = PathfindingService:CreatePath(CONFIG.PathAgentParameters or {})
-        path:ComputeAsync(hrp.Position, targetPos)
-    end)
-    if not success then return false, "path compute pcall fail: "..tostring(computeErr) end
-    if not path then return false, "path nil" end
-
-    local statusPath = path.Status
-    if statusPath ~= Enum.PathStatus.Success then
-        return false, "path status: "..tostring(statusPath)
+    -- nếu coin cao hơn nhiều -> dùng Tween bay
+    if math.abs(hrp.Position.Y - coin.Position.Y) > 6 then
+        local tween = TweenService:Create(hrp, TweenInfo.new(distance/40, Enum.EasingStyle.Linear), {CFrame = CFrame.new(coin.Position + Vector3.new(0,3,0))})
+        tween:Play()
+        tween.Completed:Wait()
+    else
+        humanoid:MoveTo(coin.Position)
+        humanoid.MoveToFinished:Wait(2)
     end
-
-    local waypoints = path:GetWaypoints()
-    -- iterate waypoints
-    for i, wp in ipairs(waypoints) do
-        if not running then return false, "stopped" end
-        -- handle Jump action
-        if wp.Action == Enum.PathWaypointAction.Jump then
-            humanoid.Jump = true
-        end
-        -- MoveTo each waypoint
-        local reached = false
-        local finishedConn
-        finishedConn = humanoid.MoveToFinished:Connect(function(reachedFlag)
-            reached = reachedFlag
-        end)
-
-        -- request move
-        humanoid:MoveTo(wp.Position)
-        -- wait until reached or timeout
-        local t0 = tick()
-        while running and (not reached) and tick() - t0 < CONFIG.WaypointTimeout do
-            -- if targetPart vanished or out of range, abort
-            if not targetPart.Parent then
-                finishedConn:Disconnect()
-                return false, "target removed"
-            end
-            task.wait(0.12)
-        end
-        -- disconnect handler
-        if finishedConn.Connected then finishedConn:Disconnect() end
-        if not reached then
-            -- couldn't reach waypoint
-            return false, "waypoint not reached"
-        end
-        task.wait(0.05)
-    end
-
-    -- reached final waypoint; wait a little for server pickup
-    task.wait(CONFIG.PickupDelay)
-    return true
 end
 
--- ===== Main collect loop =====
-local function collectLoop()
-    notify("AutoFarm", "Đang bắt đầu...", 2)
+-- vòng lặp farm
+local function farmLoop()
     while running do
-        if not humanoid or not hrp or not hrp.Parent then
-            updateCharacterRefs()
-            task.wait(0.5)
-            goto CONT
-        end
-
-        local coins = findAllCoins()
-        if #coins == 0 then
-            task.wait(1)
-            goto CONT
-        end
-
-        -- find nearest within max distance
-        local nearest, nd = nil, math.huge
-        for _, c in ipairs(coins) do
-            local ok, pos = pcall(function() return c.Position end)
-            if ok and pos then
-                local d = (hrp.Position - pos).Magnitude
-                if d < nd and d <= CONFIG.MaxSearchDistance then
-                    nd = d; nearest = c
+        updateChar()
+        if hrp then
+            local coins = getCoins()
+            local nearest, nd = nil, math.huge
+            for _,c in pairs(coins) do
+                local ok,pos = pcall(function() return c.Position end)
+                if ok and pos then
+                    local d = (hrp.Position - pos).Magnitude
+                    if d < nd then
+                        nd = d; nearest = c
+                    end
                 end
             end
-        end
-
-        if nearest then
-            -- debug print (optional)
-            -- print("Going to coin:", nearest:GetFullName(), "dist:", nd)
-            local ok, err = pcall(function()
-                local succ, why = followPathTo(nearest)
-                -- if succ true -> coin should be picked
-                if not succ then
-                    -- fallback: if path failed, skip this coin
-                    -- print("Path failed:", why)
-                end
-            end)
-            if not ok then
-                -- runtime error
-                -- print("Runtime error followPath:", err)
+            if nearest then
+                moveToCoin(nearest)
             end
-        else
-            -- no reachable coin found
-            task.wait(0.8)
         end
-
-        ::CONT::
-        task.wait(CONFIG.ScanInterval)
+        task.wait(0.4)
     end
-    notify("AutoFarm", "Stopped", 2)
 end
 
--- ===== Start / Stop control =====
-local farmThread = nil
-local function start()
-    if running then return end
-    updateCharacterRefs()
-    if not humanoid or not hrp then
-        notify("AutoFarm", "Character chưa load", 3); return
-    end
-    running = true
-    btn.Text = "Stop"
-    btn.BackgroundColor3 = Color3.fromRGB(180,60,60)
-    status.Text = "Status: ON"
-    status.TextColor3 = Color3.fromRGB(120,255,120)
-    farmThread = task.spawn(function()
-        local ok, err = pcall(collectLoop)
-        if not ok then
-            notify("AutoFarm", "Lỗi: "..tostring(err), 5)
-            running = false
-            btn.Text = "Start"
-            btn.BackgroundColor3 = Color3.fromRGB(80,160,80)
-            status.Text = "Status: OFF"
-            status.TextColor3 = Color3.fromRGB(255,120,120)
-        end
-    end)
-end
-
-local function stop()
-    running = false
-    btn.Text = "Start"
-    btn.BackgroundColor3 = Color3.fromRGB(80,160,80)
-    status.Text = "Status: OFF"
-    status.TextColor3 = Color3.fromRGB(255,120,120)
-end
-
+-- bật / tắt
 btn.MouseButton1Click:Connect(function()
-    if running then stop() else start() end
+    running = not running
+    if running then
+        btn.Text = "Stop"
+        btn.BackgroundColor3 = Color3.fromRGB(180,60,60)
+        task.spawn(farmLoop)
+    else
+        btn.Text = "Start"
+        btn.BackgroundColor3 = Color3.fromRGB(80,160,80)
+    end
 end)
 
--- Clean up on unload (optional)
-player.AncestryChanged:Connect(function(_, parent)
-    if not parent then stop() end
-end)
-
-print("[AutoFarm Path] loaded")
+print("[Hybrid AutoFarm Loaded]")
