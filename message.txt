@@ -1,4 +1,4 @@
--- AutoFarm với TweenService (Codex Mobile Friendly)
+-- TweenService Farm - bay mượt, không tele
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
@@ -55,15 +55,15 @@ end
 local function moveTo(targetPos)
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-
     local hrp = char.HumanoidRootPart
+
     local distance = (hrp.Position - targetPos).Magnitude
-    local time = distance / 50 -- tốc độ bay (50 = nhanh, nhỏ hơn thì nhanh hơn)
+    local time = distance / 60 -- chỉnh tốc độ, càng nhỏ càng nhanh
 
     local tween = TweenService:Create(
         hrp,
         TweenInfo.new(time, Enum.EasingStyle.Linear),
-        {CFrame = CFrame.new(targetPos)}
+        {Position = targetPos} -- dùng Position thay vì CFrame
     )
     tween:Play()
     tween.Completed:Wait()
