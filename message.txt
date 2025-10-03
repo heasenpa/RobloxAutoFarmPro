@@ -1,103 +1,121 @@
--- AutoFarm cho Coin_Serverr
+-- Bảng 3fix - AutoFarm (Tween bay chậm liên tục, không delay cứng)
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local StarterGui = game:GetService("StarterGui")
 local LocalPlayer = Players.LocalPlayer
 
--- Notify helper
-local function notify(title, text, dur)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = dur or 3
-        })
-    end)
+-- Xóa GUI cũ nếu có
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3fix") then
+    LocalPlayer.PlayerGui.FarmGUI3fix:Destroy()
 end
 
--- Xóa GUI cũ
-pcall(function()
-    if game:GetService("CoreGui"):FindFirstChild("FarmGUI") then
-        game:GetService("CoreGui").FarmGUI:Destroy()
-    end
-end)
+-- GUI nhỏ gọn
+local gui = Instance.new("ScreenGui")
+gui.Name = "FarmGUI3fix"
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
 
--- GUI
-local gui = Instance.new("ScreenGui", game:GetService("CoreGui"))
-gui.Name = "FarmGUI"
-
-local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 180, 0, 100)
-frame.Position = UDim2.new(0, 10, 0, 250)
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 180, 0, 120)
+frame.Position = UDim2.new(0, 400, 0, 250) -- dịch sang phải
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Parent = gui
 
-local toggleBtn = Instance.new("TextButton", frame)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 20)
+title.BackgroundTransparency = 1
+title.Text = "Bảng 3fix - Continuous Farm"
+title.TextColor3 = Color3.fromRGB(0, 200, 255)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+title.Parent = frame
+
+local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(1, -20, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.Position = UDim2.new(0, 10, 0, 30)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
 toggleBtn.Text = "Start Farm"
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 18
+toggleBtn.Parent = frame
 
-local status = Instance.new("TextLabel", frame)
+local status = Instance.new("TextLabel")
 status.Size = UDim2.new(1, -20, 0, 30)
-status.Position = UDim2.new(0, 10, 0, 60)
+status.Position = UDim2.new(0, 10, 0, 80)
 status.BackgroundTransparency = 1
 status.Text = "Status: OFF"
+status.TextColor3 = Color3.fromRGB(255,100,100)
+status.Font = Enum.Font.SourceSans
+status.TextSize = 16
+status.Parent = frame
 
 -- Farm logic
 local farming = false
+local activeTweens = {}
 
--- chỉ tìm Coin_Serverr
+-- Lấy container coin
 local function getCoins()
-    local coins = {}
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name == "Coin_Serverr" then
-            table.insert(coins, obj)
+    for _, map in pairs(workspace:GetChildren()) do
+        if map:FindFirstChild("CoinContainer") then
+            return map.CoinContainer
         end
     end
-    return coins
 end
 
-local function getNearestCoin()
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local hrp = char.HumanoidRootPart
+-- Tìm coin gần nhất
+local function findNearestCoin()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
 
-    local nearest, minDist = nil, math.huge
-    for _, coin in pairs(getCoins()) do
-        local dist = (hrp.Position - coin.Position).Magnitude
-        if dist < minDist then
-            nearest = coin
-            minDist = dist
+    local nearest, dist = nil, math.huge
+    local container = getCoins()
+    if not container then return nil end
+
+    for _, coin in pairs(container:GetChildren()) do
+        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
+            local d = (hrp.Position - coin.Position).Magnitude
+            if d < dist then
+                dist = d
+                nearest = coin
+            end
         end
     end
     return nearest
 end
 
-local function moveToCoin(coin)
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    notify("AutoFarm", "Bay tới: " .. tostring(coin.Name), 1)
+-- Bay tới coin
+local function moveToPart(part)
+    local character = LocalPlayer.Character
+    if not character then return end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not part or not part.Parent or not part:IsDescendantOf(workspace) then return end
 
-    local dist = (hrp.Position - coin.Position).Magnitude
-    local speed = 25
-    local time = math.clamp(dist / speed, 0.4, 4)
+    local distance = (hrp.Position - part.Position).Magnitude
+    local speed = 20
+    local time = math.clamp(distance / speed, 0.5, 5)
 
-    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {
-        CFrame = coin.CFrame + Vector3.new(0,3,0)
-    })
+    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = part.CFrame + Vector3.new(0,3,0)})
+    table.insert(activeTweens, tween)
     tween:Play()
-    tween.Completed:Wait()
+    tween.Completed:Connect(function()
+        for i, t in ipairs(activeTweens) do
+            if t == tween then table.remove(activeTweens, i) break end
+        end
+    end)
 end
 
+-- AutoFarm liên tục
 local function autoFarm()
     while farming do
-        local coin = getNearestCoin()
+        local coin = findNearestCoin()
         if coin then
-            moveToCoin(coin)
-        else
-            notify("AutoFarm", "Không tìm thấy Coin_Serverr", 1)
-            task.wait(1)
+            moveToPart(coin)
         end
+        task.wait(0.1) -- quét coin liên tục, delay nhỏ
     end
 end
 
@@ -105,12 +123,19 @@ toggleBtn.MouseButton1Click:Connect(function()
     farming = not farming
     if farming then
         toggleBtn.Text = "Stop Farm"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
         status.Text = "Status: ON"
-        notify("AutoFarm", "Đã bật", 2)
+        status.TextColor3 = Color3.fromRGB(100,255,100)
         task.spawn(autoFarm)
     else
         toggleBtn.Text = "Start Farm"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
         status.Text = "Status: OFF"
-        notify("AutoFarm", "Đã tắt", 2)
+        status.TextColor3 = Color3.fromRGB(255,100,100)
+        -- Hủy tất cả tween đang chạy khi tắt
+        for _, t in pairs(activeTweens) do
+            t:Cancel()
+        end
+        activeTweens = {}
     end
 end)
