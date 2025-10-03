@@ -1,5 +1,6 @@
--- Simple AutoFarm for Codex Mobile
+-- AutoFarm với TweenService (Codex Mobile Friendly)
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Xóa GUI cũ nếu có
@@ -7,7 +8,7 @@ if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI") then
     LocalPlayer.PlayerGui.FarmGUI:Destroy()
 end
 
--- GUI nhỏ gọn
+-- GUI
 local gui = Instance.new("ScreenGui")
 gui.Name = "FarmGUI"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
@@ -18,7 +19,6 @@ frame.Size = UDim2.new(0, 180, 0, 100)
 frame.Position = UDim2.new(0, 10, 0, 250)
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
-frame.Active = true
 frame.Parent = gui
 
 local toggleBtn = Instance.new("TextButton")
@@ -52,18 +52,44 @@ local function getCoins()
     end
 end
 
+local function moveTo(targetPos)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+    local hrp = char.HumanoidRootPart
+    local distance = (hrp.Position - targetPos).Magnitude
+    local time = distance / 50 -- tốc độ bay (50 = nhanh, nhỏ hơn thì nhanh hơn)
+
+    local tween = TweenService:Create(
+        hrp,
+        TweenInfo.new(time, Enum.EasingStyle.Linear),
+        {CFrame = CFrame.new(targetPos)}
+    )
+    tween:Play()
+    tween.Completed:Wait()
+end
+
 local function autoFarm()
     while farming do
         local container = getCoins()
         if container and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            for _, coin in pairs(container:GetChildren()) do
-                if coin:IsA("BasePart") and farming then
-                    LocalPlayer.Character:PivotTo(coin.CFrame)
-                    task.wait(0.3)
+            local coins = container:GetChildren()
+            if #coins > 0 then
+                local nearest, dist = nil, math.huge
+                for _, coin in pairs(coins) do
+                    if coin:IsA("BasePart") then
+                        local d = (LocalPlayer.Character.HumanoidRootPart.Position - coin.Position).Magnitude
+                        if d < dist then
+                            nearest, dist = coin, d
+                        end
+                    end
+                end
+                if nearest then
+                    moveTo(nearest.Position)
                 end
             end
         end
-        task.wait(0.5)
+        task.wait(0.1)
     end
 end
 
