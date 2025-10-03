@@ -1,139 +1,338 @@
--- Minimal Autofarm extracted (requires the map structure like original script)
+-- AutoFarm with GUI (OrionLib) + Octree
+-- Usage: paste into executor. Press the Start toggle in the GUI to run.
+
+-- ====== Config / Libraries ======
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
 local player = Players.LocalPlayer
 
--- Octree lib (same source as original)
+-- Octree library (same source used previously)
 local Octree = loadstring(game:HttpGet("https://raw.githubusercontent.com/Sleitnick/rbxts-octo-tree/main/src/init.lua", true))()
 
-local autofarm = {}
-autofarm.octree = Octree.new()
-autofarm.touched = {}
-autofarm.connections = {}
-autofarm.coinContainer = nil
-autofarm.radius = 200
-autofarm.walkspeed = 30
-autofarm.running = false
+-- Orion UI
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
 
-local function isCoinTouched(c) return autofarm.touched[c] end
-local function markTouched(c)
-    autofarm.touched[c] = true
-    local node = autofarm.octree:FindFirstNode(c)
-    if node then autofarm.octree:RemoveNode(node) end
+-- ====== Global state ======
+local AutoFarm = {}
+AutoFarm.octree = Octree.new()
+AutoFarm.touched = {} -- [coin] = true
+AutoFarm.connections = {} -- store connections to disconnect later
+AutoFarm.coinContainer = nil
+AutoFarm.running = false
+AutoFarm.radius = 200
+AutoFarm.walkspeed = 30
+AutoFarm.cooldown = 0.1
+AutoFarm.moveStep = 0.04 -- internal lerp step
+AutoFarm.scanInterval = 1 -- when no coins found
+AutoFarm.populateConn = nil
+AutoFarm.addedConn = nil
+AutoFarm.removingConn = nil
+
+-- ====== Helpers ======
+local function notify(title, text, duration)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {Title = title or "AutoFarm", Text = text or "", Duration = duration or 3})
+    end)
 end
 
+local function FindMap()
+    -- Find map by searching for "Spawns" child but not the Lobby
+    for _, v in pairs(Workspace:GetDescendants()) do
+        if v.Name == "Spawns" and v.Parent and v.Parent.Name ~= "Lobby" then
+            return v.Parent
+        end
+    end
+    return nil
+end
+
+local function FindCoinContainer()
+    local map = FindMap()
+    if not map then return nil end
+    return map:FindFirstChild("CoinContainer") or map:FindFirstChild("Coin_Container") or map:FindFirstChild("Coins")
+end
+
+local function isCoinTouched(coin) return AutoFarm.touched[coin] end
+
+local function markCoinTouched(coin)
+    if not coin then return end
+    AutoFarm.touched[coin] = true
+    local node = AutoFarm.octree:FindFirstNode(coin)
+    if node then
+        AutoFarm.octree:RemoveNode(node)
+    end
+end
+
+local function disconnectConn(conn)
+    if conn and conn.Connected then
+        pcall(function() conn:Disconnect() end)
+    end
+end
+
+local function cleanup()
+    -- disconnect stored connections
+    for _, c in pairs(AutoFarm.connections) do
+        disconnectConn(c)
+    end
+    AutoFarm.connections = {}
+    disconnectConn(AutoFarm.addedConn)
+    disconnectConn(AutoFarm.removingConn)
+    AutoFarm.octree:ClearAllNodes()
+    table.clear(AutoFarm.touched)
+end
+
+-- track when TouchTransmitter removed => coin probably touched
 local function setupTouchTracking(coin)
-    local ti = coin:FindFirstChildWhichIsA("TouchTransmitter")
-    if not ti then return end
+    if not coin or not coin:IsA("BasePart") then return end
+    local touch = coin:FindFirstChildWhichIsA("TouchTransmitter")
+    if not touch then return end
     local conn
-    conn = ti.AncestryChanged:Connect(function(_, parent)
-        if not parent then
-            markTouched(coin)
-            conn:Disconnect()
+    conn = touch.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then
+            markCoinTouched(coin)
+            disconnectConn(conn)
         end
     end)
-    table.insert(autofarm.connections, conn)
+    table.insert(AutoFarm.connections, conn)
 end
 
 local function setupPositionTracking(coin)
+    if not coin or not coin:IsA("BasePart") then return end
     local lastY = coin.Position.Y
     local conn = coin:GetPropertyChangedSignal("Position"):Connect(function()
         local curY = coin.Position.Y
         if curY ~= lastY then
-            markTouched(coin)
-            conn:Disconnect()
+            markCoinTouched(coin)
+            disconnectConn(conn)
             pcall(function() coin:Destroy() end)
         end
     end)
-    table.insert(autofarm.connections, conn)
+    table.insert(AutoFarm.connections, conn)
 end
 
-local function populate()
-    autofarm.octree:ClearAllNodes()
-    if not autofarm.coinContainer then return end
-    for _, d in pairs(autofarm.coinContainer:GetDescendants()) do
-        if d:IsA("TouchTransmitter") then
-            local parentCoin = d.Parent
+local function populateOctree()
+    -- clear and reindex current coins
+    AutoFarm.octree:ClearAllNodes()
+    if not AutoFarm.coinContainer then return end
+    for _, desc in pairs(AutoFarm.coinContainer:GetDescendants()) do
+        if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
+            local parentCoin = desc.Parent
             if not isCoinTouched(parentCoin) then
-                autofarm.octree:CreateNode(parentCoin.Position, parentCoin)
+                AutoFarm.octree:CreateNode(parentCoin.Position, parentCoin)
                 setupTouchTracking(parentCoin)
                 setupPositionTracking(parentCoin)
             end
         end
     end
-    autofarm.coinContainer.DescendantAdded:Connect(function(desc)
-        if desc:IsA("TouchTransmitter") then
-            local p = desc.Parent
-            if not isCoinTouched(p) then
-                autofarm.octree:CreateNode(p.Position, p)
-                setupTouchTracking(p)
-                setupPositionTracking(p)
+
+    -- listen for future additions
+    AutoFarm.addedConn = AutoFarm.coinContainer.DescendantAdded:Connect(function(desc)
+        if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
+            local parentCoin = desc.Parent
+            if not isCoinTouched(parentCoin) then
+                AutoFarm.octree:CreateNode(parentCoin.Position, parentCoin)
+                setupTouchTracking(parentCoin)
+                setupPositionTracking(parentCoin)
             end
+        end
+    end)
+
+    AutoFarm.removingConn = AutoFarm.coinContainer.DescendantRemoving:Connect(function(desc)
+        if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
+            local parentCoin = desc.Parent
+            markCoinTouched(parentCoin)
         end
     end)
 end
 
-local function cleanup()
-    for _, c in pairs(autofarm.connections) do
-        if c and c.Connected then pcall(function() c:Disconnect() end) end
-    end
-    table.clear(autofarm.touched)
-    autofarm.octree:ClearAllNodes()
-    autofarm.connections = {}
-end
-
-local function moveToSlowly(target, duration)
-    local char = player.Character
-    if not char or not char.PrimaryPart then return end
-    local start = char.PrimaryPart.Position
+local function moveToPositionSlowly(targetPos, duration)
+    if not player.Character or not player.Character.PrimaryPart then return end
+    local startPos = player.Character.PrimaryPart.Position
     local t0 = tick()
+    if duration <= 0 then
+        -- instant pivot
+        pcall(function() player.Character:PivotTo(CFrame.new(targetPos)) end)
+        return
+    end
     while true do
-        local alpha = math.min((tick()-t0)/duration, 1)
+        if not AutoFarm.running then break end
         if not player.Character or not player.Character.PrimaryPart then break end
-        player.Character:PivotTo(CFrame.new(start:Lerp(target, alpha)))
+        local elapsed = tick() - t0
+        local alpha = math.min(elapsed / duration, 1)
+        local newPos = startPos:Lerp(targetPos, alpha)
+        pcall(function() player.Character:PivotTo(CFrame.new(newPos)) end)
         if alpha >= 1 then break end
-        task.wait()
+        task.wait(AutoFarm.moveStep)
     end
 end
 
+-- main collect loop
 local function collectLoop()
-    autofarm.coinContainer = (Workspace:FindFirstChildWhichIsA("Model") and Workspace:FindFirstChild("CoinContainer")) or autofarm.coinContainer
-    populate()
-    while autofarm.running do
-        local char = player.Character
-        if not char or not char.PrimaryPart then break end
-        local node = autofarm.octree:GetNearest(char.PrimaryPart.Position, autofarm.radius, 1)[1]
-        if node then
-            local coin = node.Object
+    -- ensure coinContainer present
+    AutoFarm.coinContainer = FindCoinContainer()
+    if not AutoFarm.coinContainer then
+        notify("AutoFarm", "CoinContainer not found. Stopping.", 4)
+        AutoFarm.running = false
+        return
+    end
+
+    populateOctree()
+
+    while AutoFarm.running do
+        if not player.Character or not player.Character.PrimaryPart then
+            task.wait(0.5)
+            goto continue
+        end
+
+        local nearest = AutoFarm.octree:GetNearest(player.Character.PrimaryPart.Position, AutoFarm.radius, 1)[1]
+        if nearest and nearest.Object and nearest.Object:IsA("BasePart") then
+            local coin = nearest.Object
             if not isCoinTouched(coin) then
                 local target = coin.Position
-                local dur = (char.PrimaryPart.Position - target).Magnitude / autofarm.walkspeed
-                moveToSlowly(target, dur == 0 and 0.1 or dur)
-                markTouched(coin)
+                local dist = (player.Character.PrimaryPart.Position - target).Magnitude
+                local duration = math.max(0.01, dist / AutoFarm.walkspeed)
+                -- re-evaluate nearest while moving (simple approach)
+                moveToPositionSlowly(target, duration)
+                markCoinTouched(coin)
+                task.wait(AutoFarm.cooldown)
+            else
+                -- already touched, wait shortly
                 task.wait(0.2)
             end
         else
-            task.wait(1)
+            -- nothing nearby, wait then re-scan
+            task.wait(AutoFarm.scanInterval)
+            populateOctree() -- re-populate to catch newly spawned coins
+        end
+
+        ::continue::
+    end
+
+    cleanup()
+end
+
+-- ====== Public control functions ======
+local function StartAutoFarm()
+    if AutoFarm.running then return end
+    AutoFarm.running = true
+    AutoFarm.coinContainer = FindCoinContainer()
+    if not AutoFarm.coinContainer then
+        notify("AutoFarm", "Could not find map/CoinContainer.", 4)
+        AutoFarm.running = false
+        return
+    end
+    notify("AutoFarm", "Starting autofarm...", 3)
+    task.spawn(function()
+        pcall(collectLoop)
+    end)
+end
+
+local function StopAutoFarm()
+    if not AutoFarm.running then return end
+    AutoFarm.running = false
+    notify("AutoFarm", "Stopping autofarm...", 2)
+    -- cleanup will be executed at loop end
+end
+
+-- ====== GUI ======
+local Window = OrionLib:MakeWindow({Name = "Auto Farm Hub", HidePremium = false, SaveConfig = true, ConfigFolder = "AutoFarmConfig"})
+
+local FarmTab = Window:MakeTab({
+    Name = "Auto Farm",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- Start/Stop Toggle
+FarmTab:AddToggle({
+    Name = "Start Auto Farm",
+    Default = false,
+    Callback = function(value)
+        if value then
+            StartAutoFarm()
+        else
+            StopAutoFarm()
         end
     end
-    cleanup()
-end
+})
 
--- Public controls
-function autofarm.Start(mapCoinContainer)
-    autofarm.coinContainer = mapCoinContainer
-    autofarm.running = true
-    spawn(collectLoop)
-end
-function autofarm.Stop()
-    autofarm.running = false
-    cleanup()
-end
+-- Walkspeed slider
+FarmTab:AddSlider({
+    Name = "Walkspeed (used to compute duration)",
+    Min = 10,
+    Max = 200,
+    Default = AutoFarm.walkspeed,
+    Increment = 1,
+    ValueName = "ws",
+    Callback = function(v)
+        AutoFarm.walkspeed = v
+    end
+})
 
--- Example usage:
--- local mc = workspace:FindFirstChild("MapName") and workspace.MapName:FindFirstChild("CoinContainer")
--- autofarm.Start(mc)
--- autofarm.Stop()
+-- Radius slider
+FarmTab:AddSlider({
+    Name = "Search Radius",
+    Min = 50,
+    Max = 1000,
+    Default = AutoFarm.radius,
+    Increment = 10,
+    ValueName = "radius",
+    Callback = function(v)
+        AutoFarm.radius = v
+    end
+})
 
-return autofarm
+-- Cooldown between teleports (safety)
+FarmTab:AddSlider({
+    Name = "Cooldown between pickups (s)",
+    Min = 0,
+    Max = 2,
+    Default = AutoFarm.cooldown,
+    Increment = 0.05,
+    ValueName = "cd",
+    Callback = function(v)
+        AutoFarm.cooldown = v
+    end
+})
+
+FarmTab:AddButton({
+    Name = "Force Re-scan / Populate Octree",
+    Callback = function()
+        AutoFarm.coinContainer = FindCoinContainer()
+        if AutoFarm.coinContainer then
+            populateOctree()
+            notify("AutoFarm", "Re-populated coin list.", 2)
+        else
+            notify("AutoFarm", "CoinContainer not found.", 2)
+        end
+    end
+})
+
+FarmTab:AddButton({
+    Name = "Force Stop & CleanUp",
+    Callback = function()
+        StopAutoFarm()
+        cleanup()
+        notify("AutoFarm", "CleanUp done.", 2)
+    end
+})
+
+FarmTab:AddLabel("Tip: If the script can't find map, make sure the game has a model with child named 'Spawns' and not 'Lobby'.")
+
+OrionLib:Init()
+
+-- Optional: Keybind toggle (F) for Start/Stop
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(inp, gp)
+    if gp then return end
+    if inp.KeyCode == Enum.KeyCode.F then
+        if AutoFarm.running then
+            StopAutoFarm()
+        else
+            StartAutoFarm()
+        end
+    end
+end)
+
+-- End of script
