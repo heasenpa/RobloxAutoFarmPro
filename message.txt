@@ -1,22 +1,22 @@
--- Bảng 1 - Simple AutoFarm (Tween di chuyển chậm tới coin) cho Codex Mobile
+-- Bảng 3fix v3 - AutoFarm (Tween chậm, farm khi trong trận, tự động tiếp sau respawn)
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Xóa GUI cũ nếu có
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI1") then
-    LocalPlayer.PlayerGui.FarmGUI1:Destroy()
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3fix") then
+    LocalPlayer.PlayerGui.FarmGUI3fix:Destroy()
 end
 
 -- GUI nhỏ gọn
 local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI1"
+gui.Name = "FarmGUI3fix"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 180, 0, 120)
-frame.Position = UDim2.new(0, 10, 0, 250)
+frame.Size = UDim2.new(0, 200, 0, 130)
+frame.Position = UDim2.new(0, 400, 0, 250) -- không đè GUI cũ
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -25,8 +25,8 @@ frame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 20)
 title.BackgroundTransparency = 1
-title.Text = "Bảng 1 - AutoFarm"
-title.TextColor3 = Color3.fromRGB(255, 255, 0)
+title.Text = "Bảng 3fix - AutoFarm v3"
+title.TextColor3 = Color3.fromRGB(0, 200, 255)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
 title.Parent = frame
@@ -54,6 +54,18 @@ status.Parent = frame
 -- Farm logic
 local farming = false
 
+-- Kiểm tra có trong trận hay không (tùy game, thay bằng logic thực tế)
+local function InRound()
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not playerGui then return false end
+    local mainGui = playerGui:FindFirstChild("MainGUI")
+    if mainGui and mainGui:FindFirstChild("Game") and mainGui.Game:FindFirstChild("Timer") then
+        return mainGui.Game.Timer.Visible
+    end
+    return false
+end
+
+-- Lấy container coin
 local function getCoins()
     for _, map in pairs(workspace:GetChildren()) do
         if map:FindFirstChild("CoinContainer") then
@@ -62,6 +74,30 @@ local function getCoins()
     end
 end
 
+-- Tìm coin gần nhất
+local function findNearestCoin()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local nearest, dist = nil, math.huge
+    local container = getCoins()
+    if not container then return nil end
+
+    for _, coin in pairs(container:GetChildren()) do
+        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
+            local d = (hrp.Position - coin.Position).Magnitude
+            if d < dist then
+                dist = d
+                nearest = coin
+            end
+        end
+    end
+    return nearest
+end
+
+-- Bay tới coin
 local function moveToPartSlowly(part)
     local character = LocalPlayer.Character
     if not character then return end
@@ -71,25 +107,32 @@ local function moveToPartSlowly(part)
 
     local distance = (hrp.Position - part.Position).Magnitude
     local speed = 20
-    local time = math.clamp(distance / speed, 0.5, 5)
+    local time = math.clamp(distance / speed, 0.3, 3) -- thời gian bay
 
     local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = part.CFrame + Vector3.new(0,3,0)})
     tween:Play()
     tween.Completed:Wait()
 end
 
+-- AutoFarm liên tục
 local function autoFarm()
     while farming do
-        local container = getCoins()
-        if container and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            for _, coin in pairs(container:GetChildren()) do
-                if not farming then break end
-                if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
-                    moveToPartSlowly(coin)
-                end
-            end
+        local character = LocalPlayer.Character
+        local hrp = character and character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character and character:FindFirstChildWhichIsA("Humanoid")
+
+        -- Nếu ngoài trận hoặc chết, đợi respawn
+        if not (character and hrp and humanoid and humanoid.Health > 0 and InRound()) then
+            task.wait(0.5)
+            continue
         end
-        task.wait(0.2)
+
+        local coin = findNearestCoin()
+        if coin then
+            moveToPartSlowly(coin)
+        else
+            task.wait(0.2)
+        end
     end
 end
 
