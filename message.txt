@@ -1,131 +1,104 @@
--- AutoFarm Smooth Lerp FlyPart (Mobile Friendly)
+-- AutoFarm Smooth Fly (Mobile Codex Friendly)
+-- by ChatGPT
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+-- GUI nhỏ gọn
+local ScreenGui = Instance.new("ScreenGui")
+local Frame = Instance.new("Frame")
+local Button = Instance.new("TextButton")
 
--- Xóa GUI cũ nếu có
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI") then
-    LocalPlayer.PlayerGui.FarmGUI:Destroy()
-end
+ScreenGui.Parent = game:GetService("CoreGui")
+Frame.Size = UDim2.new(0,150,0,60)
+Frame.Position = UDim2.new(0,10,0,200)
+Frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
+Frame.Parent = ScreenGui
 
--- GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI"
-gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-gui.ResetOnSpawn = false
+Button.Size = UDim2.new(1,0,1,0)
+Button.BackgroundColor3 = Color3.fromRGB(80,170,80)
+Button.TextColor3 = Color3.new(1,1,1)
+Button.Font = Enum.Font.SourceSansBold
+Button.Text = "Start Farm"
+Button.Parent = Frame
 
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 180, 0, 100)
-frame.Position = UDim2.new(0, 10, 0, 250)
-frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-frame.BorderSizePixel = 0
-frame.Parent = gui
+-- Script farm
+local RunService = game:GetService("RunService")
+local Tweening = false
+local connection
 
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(1, -20, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0, 10)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
-toggleBtn.Text = "Start Farm"
-toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 18
-toggleBtn.Parent = frame
-
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -20, 0, 30)
-status.Position = UDim2.new(0, 10, 0, 60)
-status.BackgroundTransparency = 1
-status.Text = "Status: OFF"
-status.TextColor3 = Color3.fromRGB(255,100,100)
-status.Font = Enum.Font.SourceSans
-status.TextSize = 16
-status.Parent = frame
-
--- FlyPart vô hình
+-- Tạo part bay
 local flyPart = Instance.new("Part")
-flyPart.Anchored = false
-flyPart.CanCollide = false
+flyPart.Size = Vector3.new(2,1,2)
+flyPart.Anchored = true
 flyPart.Transparency = 1
-flyPart.Size = Vector3.new(6,1,6)
-flyPart.Name = "FlyPart"
+flyPart.CanCollide = false
 flyPart.Parent = workspace
 
--- Weld nhân vật vào flyPart
-local function weldToPart(char)
-    task.wait(1)
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        local hrp = char.HumanoidRootPart
-        flyPart.CFrame = hrp.CFrame
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = hrp
-        weld.Part1 = flyPart
-        weld.Parent = hrp
-    end
-end
+local root = game.Players.LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+root.CFrame = root.CFrame + Vector3.new(0,3,0)
+local weld = Instance.new("WeldConstraint")
+weld.Part0 = flyPart
+weld.Part1 = root
+weld.Parent = flyPart
 
-weldToPart(LocalPlayer.Character)
-LocalPlayer.CharacterAdded:Connect(weldToPart)
-
--- Hàm lấy CoinContainer
-local function getCoins()
-    for _, map in pairs(workspace:GetChildren()) do
-        if map:FindFirstChild("CoinContainer") then
-            return map.CoinContainer
+-- Hàm bay mượt tới target
+local function smoothFlyTo(targetPos)
+    if connection then connection:Disconnect() end
+    connection = RunService.Heartbeat:Connect(function(dt)
+        local currentPos = flyPart.Position
+        local direction = (targetPos - currentPos)
+        local distance = direction.Magnitude
+        if distance < 4 then
+            connection:Disconnect()
+        else
+            local move = direction.Unit * (60 * dt) -- tốc độ
+            flyPart.CFrame = CFrame.new(currentPos + move)
         end
-    end
+    end)
 end
 
--- Bay mượt bằng Lerp
-local function smoothMove(targetPos)
-    local steps = 40 -- số bước bay
-    local start = flyPart.Position
-    for i = 1, steps do
-        local newPos = start:Lerp(targetPos + Vector3.new(0,3,0), i/steps)
-        flyPart.CFrame = CFrame.new(newPos)
-        task.wait(0.02) -- tốc độ bay (giảm số này = nhanh hơn)
-    end
-end
-
--- Farm logic
-local farming = false
-
-local function autoFarm()
-    while farming do
-        local container = getCoins()
-        if container then
-            local coins = container:GetChildren()
-            if #coins > 0 then
-                local nearest, dist = nil, math.huge
-                for _, coin in pairs(coins) do
-                    if coin:IsA("BasePart") then
-                        local d = (flyPart.Position - coin.Position).Magnitude
-                        if d < dist then
-                            nearest, dist = coin, d
-                        end
-                    end
-                end
-                if nearest then
-                    smoothMove(nearest.Position)
-                end
+-- Hàm tìm coin gần nhất
+local function getNearestCoin()
+    local nearest, dist = nil, math.huge
+    for _,v in pairs(workspace:GetDescendants()) do
+        if v:IsA("MeshPart") and v.Name == "Coin" then
+            local d = (root.Position - v.Position).Magnitude
+            if d < dist then
+                nearest = v
+                dist = d
             end
         end
-        task.wait(0.1)
+    end
+    return nearest
+end
+
+-- Vòng farm
+local function startFarm()
+    Tweening = true
+    while Tweening do
+        local coin = getNearestCoin()
+        if coin then
+            smoothFlyTo(coin.Position + Vector3.new(0,3,0))
+        end
+        task.wait(1)
     end
 end
 
--- Nút bật/tắt
-toggleBtn.MouseButton1Click:Connect(function()
-    farming = not farming
-    if farming then
-        toggleBtn.Text = "Stop Farm"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
-        status.Text = "Status: ON"
-        status.TextColor3 = Color3.fromRGB(100,255,100)
-        task.spawn(autoFarm)
+local function stopFarm()
+    Tweening = false
+    if connection then connection:Disconnect() end
+end
+
+-- Nút bấm
+local farming = false
+Button.MouseButton1Click:Connect(function()
+    if not farming then
+        farming = true
+        Button.Text = "Stop Farm"
+        Button.BackgroundColor3 = Color3.fromRGB(200,80,80)
+        startFarm()
     else
-        toggleBtn.Text = "Start Farm"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
-        status.Text = "Status: OFF"
-        status.TextColor3 = Color3.fromRGB(255,100,100)
+        farming = false
+        Button.Text = "Start Farm"
+        Button.BackgroundColor3 = Color3.fromRGB(80,170,80)
+        stopFarm()
     end
 end)
