@@ -1,21 +1,22 @@
--- Bảng 3fix v3 - Bay tới coin, kiểm tra balo thật
+-- Bảng 3fix v5 - Tự nhận diện Inventory, bay tới coin
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
--- GUI
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3") then
-    LocalPlayer.PlayerGui.FarmGUI3:Destroy()
+-- Xóa GUI cũ
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3v5") then
+    LocalPlayer.PlayerGui.FarmGUI3v5:Destroy()
 end
 
+-- GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI3"
+gui.Name = "FarmGUI3v5"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 200, 0, 150)
+frame.Size = UDim2.new(0, 220, 0, 160)
 frame.Position = UDim2.new(0, 400, 0, 250)
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
@@ -25,7 +26,7 @@ frame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 20)
 title.BackgroundTransparency = 1
-title.Text = "Bảng 3fix v3"
+title.Text = "Bảng 3fix v5"
 title.TextColor3 = Color3.fromRGB(255, 255, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
@@ -65,6 +66,32 @@ bagLabel.Parent = frame
 local farming = false
 local MAX_COINS = 40
 
+-- Tìm Inventory tự động
+local function getInventory()
+    for _, obj in pairs(LocalPlayer:GetChildren()) do
+        if obj:IsA("Folder") or obj:IsA("Model") then
+            if #obj:GetChildren() > 0 then
+                return obj
+            end
+        end
+    end
+    for _, obj in pairs(ReplicatedStorage:GetChildren()) do
+        if obj:IsA("Folder") or obj:IsA("Model") then
+            if #obj:GetChildren() > 0 then
+                return obj
+            end
+        end
+    end
+end
+
+local function getBagCount()
+    local inv = getInventory()
+    if inv then
+        return #inv:GetChildren()
+    end
+    return 0
+end
+
 local function getCoins()
     for _, map in pairs(workspace:GetChildren()) do
         if map:FindFirstChild("CoinContainer") then
@@ -92,16 +119,6 @@ local function findNearestCoin()
         end
     end
     return nearest
-end
-
-local function getBagCount()
-    -- Giả sử game lưu balo trong ReplicatedStorage / Player.Data / Inventory
-    -- Thay "Inventory" bằng tên đúng object của game
-    local inventory = LocalPlayer:FindFirstChild("Inventory") or ReplicatedStorage:FindFirstChild("Inventory")
-    if inventory then
-        return #inventory:GetChildren()
-    end
-    return 0
 end
 
 local function resetCharacter()
@@ -140,13 +157,13 @@ local function autoFarm()
         if bagCount >= MAX_COINS then
             status.Text = "Balo full! Reset..."
             resetCharacter()
-            task.wait(3) -- chờ respawn
+            task.wait(3)
         else
             local coin = findNearestCoin()
             if coin then
                 moveToCoin(coin)
             else
-                task.wait(0.1)
+                task.wait(0.05)
             end
         end
     end
