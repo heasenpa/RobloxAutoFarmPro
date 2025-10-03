@@ -1,16 +1,16 @@
--- Bảng 3fix - AutoFarm (Tween bay chậm liên tục, không delay cứng)
+-- Bảng 4fix - AutoFarm (Tween mượt, quét coin liên tục)
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Xóa GUI cũ nếu có
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3fix") then
-    LocalPlayer.PlayerGui.FarmGUI3fix:Destroy()
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI4") then
+    LocalPlayer.PlayerGui.FarmGUI4:Destroy()
 end
 
--- GUI nhỏ gọn
+-- GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI3fix"
+gui.Name = "FarmGUI4"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
@@ -25,7 +25,7 @@ frame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 20)
 title.BackgroundTransparency = 1
-title.Text = "Bảng 3fix - Continuous Farm"
+title.Text = "Bảng 4fix - AutoFarm"
 title.TextColor3 = Color3.fromRGB(0, 200, 255)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
@@ -53,10 +53,10 @@ status.Parent = frame
 
 -- Farm logic
 local farming = false
-local activeTweens = {}
+local coinConnections = {}
 
 -- Lấy container coin
-local function getCoins()
+local function getCoinContainer()
     for _, map in pairs(workspace:GetChildren()) do
         if map:FindFirstChild("CoinContainer") then
             return map.CoinContainer
@@ -64,7 +64,7 @@ local function getCoins()
     end
 end
 
--- Tìm coin gần nhất
+-- Tìm coin gần nhất, bỏ coin biến mất
 local function findNearestCoin()
     local character = LocalPlayer.Character
     if not character then return nil end
@@ -72,7 +72,7 @@ local function findNearestCoin()
     if not hrp then return nil end
 
     local nearest, dist = nil, math.huge
-    local container = getCoins()
+    local container = getCoinContainer()
     if not container then return nil end
 
     for _, coin in pairs(container:GetChildren()) do
@@ -87,38 +87,43 @@ local function findNearestCoin()
     return nearest
 end
 
--- Bay tới coin
-local function moveToPart(part)
+-- Bay mượt tới coin, không chặn loop
+local function moveToCoin(coin)
     local character = LocalPlayer.Character
     if not character then return end
     local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp or not part or not part.Parent or not part:IsDescendantOf(workspace) then return end
+    if not hrp then return end
+    if not coin or not coin.Parent or not coin:IsDescendantOf(workspace) then return end
 
-    local distance = (hrp.Position - part.Position).Magnitude
+    local distance = (hrp.Position - coin.Position).Magnitude
     local speed = 20
-    local time = math.clamp(distance / speed, 0.5, 5)
+    local time = math.clamp(distance / speed, 0.5, 3)
 
-    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = part.CFrame + Vector3.new(0,3,0)})
-    table.insert(activeTweens, tween)
+    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = coin.CFrame + Vector3.new(0,3,0)})
     tween:Play()
+    -- Khi tween hoàn thành, tự động remove coin nếu biến mất
     tween.Completed:Connect(function()
-        for i, t in ipairs(activeTweens) do
-            if t == tween then table.remove(activeTweens, i) break end
+        if not coin.Parent or not coin:IsDescendantOf(workspace) then
+            coinConnections[coin] = nil
         end
     end)
 end
 
--- AutoFarm liên tục
+-- AutoFarm
 local function autoFarm()
     while farming do
         local coin = findNearestCoin()
         if coin then
-            moveToPart(coin)
+            if not coinConnections[coin] then
+                coinConnections[coin] = true
+                moveToCoin(coin)
+            end
         end
-        task.wait(0.1) -- quét coin liên tục, delay nhỏ
+        task.wait(0.05) -- quét coin cực nhanh
     end
 end
 
+-- Nút bật/tắt farm
 toggleBtn.MouseButton1Click:Connect(function()
     farming = not farming
     if farming then
@@ -132,10 +137,5 @@ toggleBtn.MouseButton1Click:Connect(function()
         toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
         status.Text = "Status: OFF"
         status.TextColor3 = Color3.fromRGB(255,100,100)
-        -- Hủy tất cả tween đang chạy khi tắt
-        for _, t in pairs(activeTweens) do
-            t:Cancel()
-        end
-        activeTweens = {}
     end
 end)
