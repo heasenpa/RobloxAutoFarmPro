@@ -1,6 +1,5 @@
--- AutoFarm Tween FlyPart (Fix đứng im)
+-- Simple AutoFarm for Codex Mobile
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 -- Xóa GUI cũ nếu có
@@ -8,7 +7,7 @@ if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI") then
     LocalPlayer.PlayerGui.FarmGUI:Destroy()
 end
 
--- GUI
+-- GUI nhỏ gọn
 local gui = Instance.new("ScreenGui")
 gui.Name = "FarmGUI"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
@@ -19,6 +18,7 @@ frame.Size = UDim2.new(0, 180, 0, 100)
 frame.Position = UDim2.new(0, 10, 0, 250)
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
+frame.Active = true
 frame.Parent = gui
 
 local toggleBtn = Instance.new("TextButton")
@@ -41,31 +41,6 @@ status.Font = Enum.Font.SourceSans
 status.TextSize = 16
 status.Parent = frame
 
--- FlyPart vô hình
-local flyPart = Instance.new("Part")
-flyPart.Anchored = false
-flyPart.CanCollide = false
-flyPart.Transparency = 1
-flyPart.Size = Vector3.new(6,1,6)
-flyPart.Name = "FlyPart"
-flyPart.Parent = workspace
-
--- Weld nhân vật vào flyPart
-local function weldToPart(char)
-    task.wait(1)
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        local hrp = char.HumanoidRootPart
-        flyPart.CFrame = hrp.CFrame
-        local weld = Instance.new("WeldConstraint")
-        weld.Part0 = hrp
-        weld.Part1 = flyPart
-        weld.Parent = hrp
-    end
-end
-
-weldToPart(LocalPlayer.Character)
-LocalPlayer.CharacterAdded:Connect(weldToPart)
-
 -- Farm logic
 local farming = false
 
@@ -77,39 +52,18 @@ local function getCoins()
     end
 end
 
-local function flyTo(targetPos)
-    local distance = (flyPart.Position - targetPos).Magnitude
-    local time = distance / 60 -- chỉnh tốc độ bay
-    local tween = TweenService:Create(
-        flyPart,
-        TweenInfo.new(time, Enum.EasingStyle.Linear),
-        {CFrame = CFrame.new(targetPos + Vector3.new(0,3,0))}
-    )
-    tween:Play()
-    tween.Completed:Wait()
-end
-
 local function autoFarm()
     while farming do
         local container = getCoins()
-        if container then
-            local coins = container:GetChildren()
-            if #coins > 0 then
-                local nearest, dist = nil, math.huge
-                for _, coin in pairs(coins) do
-                    if coin:IsA("BasePart") then
-                        local d = (flyPart.Position - coin.Position).Magnitude
-                        if d < dist then
-                            nearest, dist = coin, d
-                        end
-                    end
-                end
-                if nearest then
-                    flyTo(nearest.Position)
+        if container and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            for _, coin in pairs(container:GetChildren()) do
+                if coin:IsA("BasePart") and farming then
+                    LocalPlayer.Character:PivotTo(coin.CFrame)
+                    task.wait(0.3)
                 end
             end
         end
-        task.wait(0.1)
+        task.wait(0.5)
     end
 end
 
@@ -128,3 +82,4 @@ toggleBtn.MouseButton1Click:Connect(function()
         status.TextColor3 = Color3.fromRGB(255,100,100)
     end
 end)
+
