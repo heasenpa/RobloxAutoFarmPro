@@ -1,36 +1,93 @@
--- Test GUI cơ bản
+-- AutoFarm GUI nhỏ gọn
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
 
--- Xóa GUI cũ (nếu có)
-if player.PlayerGui:FindFirstChild("TestGUI") then
-    player.PlayerGui.TestGUI:Destroy()
+-- Xóa GUI cũ nếu có
+if LocalPlayer.PlayerGui:FindFirstChild("MiniAutoFarmGUI") then
+    LocalPlayer.PlayerGui.MiniAutoFarmGUI:Destroy()
 end
 
 -- Tạo ScreenGui
 local gui = Instance.new("ScreenGui")
-gui.Name = "TestGUI"
-gui.Parent = player:WaitForChild("PlayerGui")
+gui.Name = "MiniAutoFarmGUI"
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
--- Tạo khung (Frame)
+-- Khung chính
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 300, 0, 200)
-frame.Position = UDim2.new(0.5, -150, 0.5, -100)
-frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+frame.Size = UDim2.new(0, 200, 0, 120)
+frame.Position = UDim2.new(1, -210, 1, -130) -- góc phải dưới
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 0
 frame.Parent = gui
 
--- Tạo nút bấm (TextButton)
-local button = Instance.new("TextButton")
-button.Size = UDim2.new(0, 200, 0, 50)
-button.Position = UDim2.new(0.5, -100, 0.5, -25)
-button.BackgroundColor3 = Color3.fromRGB(70, 130, 180)
-button.Text = "Bấm vào đây"
-button.TextColor3 = Color3.fromRGB(255, 255, 255)
-button.Font = Enum.Font.SourceSansBold
-button.TextSize = 20
-button.Parent = frame
+-- Tiêu đề
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+title.Text = "AutoFarm"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+title.Parent = frame
 
--- Sự kiện click
-button.MouseButton1Click:Connect(function()
-    button.Text = "Đã bấm!"
+-- Nút Start/Stop
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, -20, 0, 40)
+toggleBtn.Position = UDim2.new(0, 10, 0, 40)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 150, 80)
+toggleBtn.Text = "Start"
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 18
+toggleBtn.Parent = frame
+
+-- Trạng thái
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -20, 0, 30)
+status.Position = UDim2.new(0, 10, 0, 90)
+status.BackgroundTransparency = 1
+status.Text = "Status: OFF"
+status.TextColor3 = Color3.fromRGB(255, 120, 120)
+status.Font = Enum.Font.SourceSans
+status.TextSize = 16
+status.Parent = frame
+
+-- Biến farm
+local farming = false
+local cooldown = 0.2
+
+-- Hàm farm coin
+local function farmCoins()
+    while farming do
+        local normal = workspace:FindFirstChild("Normal")
+        if normal and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local container = normal:FindFirstChild("CoinContainer")
+            if container then
+                for _, coin in pairs(container:GetChildren()) do
+                    if coin:IsA("BasePart") and farming then
+                        LocalPlayer.Character:PivotTo(coin.CFrame)
+                        task.wait(cooldown)
+                    end
+                end
+            end
+        end
+        task.wait()
+    end
+end
+
+-- Nút bấm
+toggleBtn.MouseButton1Click:Connect(function()
+    farming = not farming
+    if farming then
+        toggleBtn.Text = "Stop"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200,80,80)
+        status.Text = "Status: ON"
+        status.TextColor3 = Color3.fromRGB(120, 255, 120)
+        task.spawn(farmCoins)
+    else
+        toggleBtn.Text = "Start"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,150,80)
+        status.Text = "Status: OFF"
+        status.TextColor3 = Color3.fromRGB(255,120,120)
+    end
 end)
