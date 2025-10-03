@@ -1,53 +1,66 @@
--- AutoFarm GUI cho Codex Mobile
+-- AutoFarm GUI Mobile với nút Close
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
--- Xóa GUI cũ nếu có
 if LocalPlayer.PlayerGui:FindFirstChild("MiniAutoFarmGUI") then
     LocalPlayer.PlayerGui.MiniAutoFarmGUI:Destroy()
 end
 
--- Tạo ScreenGui
 local gui = Instance.new("ScreenGui")
 gui.Name = "MiniAutoFarmGUI"
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
--- Khung chính
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 200, 0, 120)
-frame.Position = UDim2.new(1, -210, 1, -130)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.Size = UDim2.new(0, 220, 0, 140)
+frame.Position = UDim2.new(1, -230, 1, -150)
+frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 frame.BorderSizePixel = 0
 frame.Active = true
 frame.Parent = gui
 
--- Tiêu đề (cũng là vùng kéo)
+-- Tiêu đề
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-title.Text = "AutoFarm"
+title.Size = UDim2.new(1, -30, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+title.Text = "AutoFarm (kéo ở đây)"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.Font = Enum.Font.SourceSansBold
-title.TextSize = 20
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
 title.Parent = frame
+
+-- Nút Close [X]
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -30, 0, 0)
+closeBtn.Text = "X"
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.TextSize = 18
+closeBtn.Parent = frame
+
+closeBtn.MouseButton1Click:Connect(function()
+    gui:Destroy()
+end)
 
 -- Nút Start/Stop
 local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(1, -20, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0, 40)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 150, 80)
+toggleBtn.Size = UDim2.new(1, -40, 0, 50)
+toggleBtn.Position = UDim2.new(0, 20, 0, 40)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
 toggleBtn.Text = "Start"
 toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
 toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 18
+toggleBtn.TextSize = 20
 toggleBtn.Parent = frame
 
 -- Trạng thái
 local status = Instance.new("TextLabel")
 status.Size = UDim2.new(1, -20, 0, 30)
-status.Position = UDim2.new(0, 10, 0, 90)
+status.Position = UDim2.new(0, 10, 0, 100)
 status.BackgroundTransparency = 1
 status.Text = "Status: OFF"
 status.TextColor3 = Color3.fromRGB(255, 120, 120)
@@ -55,11 +68,10 @@ status.Font = Enum.Font.SourceSans
 status.TextSize = 16
 status.Parent = frame
 
--- Biến farm
+-- Farm logic
 local farming = false
-local cooldown = 0.2
+local cooldown = 0.3
 
--- Hàm farm coin
 local function farmCoins()
     while farming do
         local normal = workspace:FindFirstChild("Normal")
@@ -78,7 +90,6 @@ local function farmCoins()
     end
 end
 
--- Nút bấm
 toggleBtn.MouseButton1Click:Connect(function()
     farming = not farming
     if farming then
@@ -89,13 +100,13 @@ toggleBtn.MouseButton1Click:Connect(function()
         task.spawn(farmCoins)
     else
         toggleBtn.Text = "Start"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,150,80)
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
         status.Text = "Status: OFF"
         status.TextColor3 = Color3.fromRGB(255,120,120)
     end
 end)
 
--- Script kéo GUI (mobile-friendly)
+-- Kéo GUI cho mobile
 do
     local dragging, dragInput, dragStart, startPos
 
@@ -108,7 +119,7 @@ do
     end
 
     title.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
@@ -121,14 +132,8 @@ do
         end
     end)
 
-    title.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-
     UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
+        if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
             update(input)
         end
     end)
