@@ -1,4 +1,4 @@
--- TweenService Farm - bay mượt, không tele
+-- AutoFarm Tween Part (Codex Mobile Friendly)
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
@@ -41,6 +41,31 @@ status.Font = Enum.Font.SourceSans
 status.TextSize = 16
 status.Parent = frame
 
+-- FlyPart vô hình
+local flyPart = Instance.new("Part")
+flyPart.Anchored = true
+flyPart.CanCollide = false
+flyPart.Transparency = 1
+flyPart.Size = Vector3.new(6,1,6)
+flyPart.Name = "FlyPart"
+flyPart.Parent = workspace
+
+-- Weld nhân vật vào flyPart
+local function weldToPart(char)
+    task.wait(1)
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local hrp = char.HumanoidRootPart
+        flyPart.CFrame = hrp.CFrame
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = hrp
+        weld.Part1 = flyPart
+        weld.Parent = hrp
+    end
+end
+
+weldToPart(LocalPlayer.Character)
+LocalPlayer.CharacterAdded:Connect(weldToPart)
+
 -- Farm logic
 local farming = false
 
@@ -52,18 +77,13 @@ local function getCoins()
     end
 end
 
-local function moveTo(targetPos)
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    local hrp = char.HumanoidRootPart
-
-    local distance = (hrp.Position - targetPos).Magnitude
-    local time = distance / 60 -- chỉnh tốc độ, càng nhỏ càng nhanh
-
+local function flyTo(targetPos)
+    local distance = (flyPart.Position - targetPos).Magnitude
+    local time = distance / 60 -- chỉnh tốc độ bay
     local tween = TweenService:Create(
-        hrp,
+        flyPart,
         TweenInfo.new(time, Enum.EasingStyle.Linear),
-        {Position = targetPos} -- dùng Position thay vì CFrame
+        {Position = targetPos + Vector3.new(0,3,0)} -- bay cao hơn coin 1 chút
     )
     tween:Play()
     tween.Completed:Wait()
@@ -72,20 +92,20 @@ end
 local function autoFarm()
     while farming do
         local container = getCoins()
-        if container and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        if container then
             local coins = container:GetChildren()
             if #coins > 0 then
                 local nearest, dist = nil, math.huge
                 for _, coin in pairs(coins) do
                     if coin:IsA("BasePart") then
-                        local d = (LocalPlayer.Character.HumanoidRootPart.Position - coin.Position).Magnitude
+                        local d = (flyPart.Position - coin.Position).Magnitude
                         if d < dist then
                             nearest, dist = coin, d
                         end
                     end
                 end
                 if nearest then
-                    moveTo(nearest.Position)
+                    flyTo(nearest.Position)
                 end
             end
         end
