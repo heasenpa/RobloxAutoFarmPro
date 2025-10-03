@@ -1,381 +1,131 @@
--- AutoFarm bằng FlyPart + Align (fix không "dán đứng")
--- Dán vào executor (Codex mobile). Nhấn Start để chạy.
+-- AutoFarm Smooth Lerp FlyPart (Mobile Friendly)
 
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
-local StarterGui = game:GetService("StarterGui")
+local LocalPlayer = Players.LocalPlayer
 
-local player = Players.LocalPlayer
-
--- ==== GUI cực nhỏ (góc trái) ====
-if player.PlayerGui:FindFirstChild("AFGui") then
-    player.PlayerGui.AFGui:Destroy()
+-- Xóa GUI cũ nếu có
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI") then
+    LocalPlayer.PlayerGui.FarmGUI:Destroy()
 end
 
+-- GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "AFGui"
-gui.Parent = player:WaitForChild("PlayerGui")
+gui.Name = "FarmGUI"
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
-local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0,180,0,90)
-frame.Position = UDim2.new(0,10,0,200)
-frame.BackgroundColor3 = Color3.fromRGB(38,38,38)
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 180, 0, 100)
+frame.Position = UDim2.new(0, 10, 0, 250)
+frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
+frame.Parent = gui
 
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1,0,0,24)
-title.Position = UDim2.new(0,0,0,0)
-title.BackgroundTransparency = 1
-title.Text = "AutoFarm (Align)"
-title.TextColor3 = Color3.fromRGB(255,255,255)
-title.Font = Enum.Font.SourceSansBold
-title.TextSize = 14
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, -20, 0, 40)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
+toggleBtn.Text = "Start Farm"
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 18
+toggleBtn.Parent = frame
 
-local toggle = Instance.new("TextButton", frame)
-toggle.Size = UDim2.new(1,-20,0,36)
-toggle.Position = UDim2.new(0,10,0,28)
-toggle.Text = "Start"
-toggle.Font = Enum.Font.SourceSansBold
-toggle.TextSize = 16
-toggle.BackgroundColor3 = Color3.fromRGB(75,150,75)
-
-local status = Instance.new("TextLabel", frame)
-status.Size = UDim2.new(1,-20,0,20)
-status.Position = UDim2.new(0,10,0,66)
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -20, 0, 30)
+status.Position = UDim2.new(0, 10, 0, 60)
 status.BackgroundTransparency = 1
 status.Text = "Status: OFF"
-status.TextColor3 = Color3.fromRGB(255,120,120)
+status.TextColor3 = Color3.fromRGB(255,100,100)
 status.Font = Enum.Font.SourceSans
-status.TextSize = 14
+status.TextSize = 16
+status.Parent = frame
 
--- ==== Config bạn có thể chỉnh nhanh ====
-local CONFIG = {
-    Speed = 80,        -- đơn vị: studs / giây (càng lớn càng nhanh)
-    PickupHeight = 3,  -- bay lên cao hơn coin (studs)
-    PickupDelay = 0.18,-- đợi khi tới để pick coin
-    ScanDelay = 0.25,  -- delay giữa các vòng scan
-    MaxCoinDistance = 1000, -- giới hạn khoảng cách tìm coin
-}
+-- FlyPart vô hình
+local flyPart = Instance.new("Part")
+flyPart.Anchored = false
+flyPart.CanCollide = false
+flyPart.Transparency = 1
+flyPart.Size = Vector3.new(6,1,6)
+flyPart.Name = "FlyPart"
+flyPart.Parent = workspace
 
--- ==== State và helpers ====
-local running = false
-local flyPart = nil
-local ap, ao = nil, nil -- AlignPosition, AlignOrientation
-local hrpAttachment = nil
-local flyAttachment = nil
-local charAddedConn = nil
-
-local function notify(t, m, d)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", {Title = t, Text = m, Duration = d or 3})
-    end)
-end
-
-local function safeDestroy(inst)
-    if inst and inst.Destroy then
-        pcall(function() inst:Destroy() end)
+-- Weld nhân vật vào flyPart
+local function weldToPart(char)
+    task.wait(1)
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        local hrp = char.HumanoidRootPart
+        flyPart.CFrame = hrp.CFrame
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = hrp
+        weld.Part1 = flyPart
+        weld.Parent = hrp
     end
 end
 
-local function getHRP()
-    local c = player.Character
-    if not c then return nil end
-    return c:FindFirstChild("HumanoidRootPart")
-end
+weldToPart(LocalPlayer.Character)
+LocalPlayer.CharacterAdded:Connect(weldToPart)
 
--- Tìm coin bằng nhiều chiến lược
-local function findCoins()
-    local out = {}
-    -- 1) Tìm TouchTransmitter parent basepart
-    for _, desc in pairs(workspace:GetDescendants()) do
-        if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
-            table.insert(out, desc.Parent)
-        end
-    end
-    -- 2) Nếu chưa đủ, tìm parts có tên chứa coin/beach/ball
-    if #out == 0 then
-        for _, part in pairs(workspace:GetDescendants()) do
-            if part:IsA("BasePart") then
-                local n = tostring(part.Name):lower()
-                if n:find("coin") or n:find("beach") or n:find("ball") or n:find("token") then
-                    table.insert(out, part)
-                end
-            end
-        end
-    end
-    -- dedupe (đảm bảo không lặp)
-    local seen = {}
-    local dedup = {}
-    for _, p in ipairs(out) do
-        if p and p.Parent and not seen[p] then
-            seen[p] = true
-            table.insert(dedup, p)
-        end
-    end
-    return dedup
-end
-
--- Tạo flyPart (anchored = true) và Align -> Align sẽ kéo HRP tới flyPart
-local function createFlySystem()
-    -- clean trước
-    safeDestroy(flyPart)
-    flyPart = Instance.new("Part")
-    flyPart.Name = "AF_FlyPart"
-    flyPart.Size = Vector3.new(4,1,4)
-    flyPart.Transparency = 1
-    flyPart.CanCollide = false
-    flyPart.Anchored = true     -- anchored: chúng ta tween flyPart; Align sẽ kéo HRP
-    flyPart.Parent = workspace
-
-    -- Attachment trên flyPart
-    flyAttachment = Instance.new("Attachment")
-    flyAttachment.Name = "AF_FlyAtt"
-    flyAttachment.Parent = flyPart
-
-    -- HRP attachment (tạo trên HRP)
-    local hrp = getHRP()
-    if not hrp then return false, "No HRP"
-    end
-    -- nếu đã có attachment tên AF_HRP_Att, xóa để tránh trùng
-    for _, a in pairs(hrp:GetChildren()) do
-        if a:IsA("Attachment") and a.Name == "AF_HRP_Att" then
-            a:Destroy()
-        end
-    end
-    hrpAttachment = Instance.new("Attachment")
-    hrpAttachment.Name = "AF_HRP_Att"
-    hrpAttachment.Parent = hrp
-    hrpAttachment.Position = Vector3.new(0,0,0)
-
-    -- AlignPosition (parent HRP)
-    ap = Instance.new("AlignPosition")
-    ap.Name = "AF_AlignPos"
-    ap.Attachment0 = hrpAttachment
-    ap.Attachment1 = flyAttachment
-    ap.RigidityEnabled = false
-    ap.MaxForce = 9e9
-    ap.MaxVelocity = 1e5
-    ap.Responsiveness = 200
-    ap.Parent = hrp
-
-    -- AlignOrientation
-    ao = Instance.new("AlignOrientation")
-    ao.Name = "AF_AlignOri"
-    ao.Attachment0 = hrpAttachment
-    ao.Attachment1 = flyAttachment
-    ao.MaxTorque = 9e9
-    ao.Responsiveness = 200
-    ao.Parent = hrp
-
-    -- position flyPart at HRP to begin
-    flyPart.CFrame = hrp.CFrame * CFrame.new(0, CONFIG.PickupHeight, 0)
-    return true
-end
-
-local function destroyFlySystem()
-    ap = nil; ao = nil
-    if hrpAttachment then safeDestroy(hrpAttachment); hrpAttachment = nil end
-    if flyAttachment then safeDestroy(flyAttachment); flyAttachment = nil end
-    safeDestroy(flyPart); flyPart = nil
-end
-
--- Khi character respawn -> recreate attachments
-local function onCharacterAdded(char)
-    -- dọn attachment cũ
-    if hrpAttachment then
-        safeDestroy(hrpAttachment)
-        hrpAttachment = nil
-    end
-    -- tạo lại Align parent nếu đang chạy
-    if running then
-        -- chờ HRP
-        local hrp = char:WaitForChild("HumanoidRootPart", 5)
-        if hrp then
-            -- destroy existing Aligns if any on hrp
-            for _, v in pairs(hrp:GetChildren()) do
-                if v.Name == "AF_AlignPos" or v.Name == "AF_AlignOri" or v.Name == "AF_HRP_Att" then
-                    safeDestroy(v)
-                end
-            end
-            -- recreate
-            if flyPart then
-                hrpAttachment = Instance.new("Attachment")
-                hrpAttachment.Name = "AF_HRP_Att"
-                hrpAttachment.Parent = hrp
-                hrpAttachment.Position = Vector3.new(0,0,0)
-
-                ap = Instance.new("AlignPosition")
-                ap.Name = "AF_AlignPos"
-                ap.Attachment0 = hrpAttachment
-                ap.Attachment1 = flyAttachment
-                ap.RigidityEnabled = false
-                ap.MaxForce = 9e9
-                ap.MaxVelocity = 1e5
-                ap.Responsiveness = 200
-                ap.Parent = hrp
-
-                ao = Instance.new("AlignOrientation")
-                ao.Name = "AF_AlignOri"
-                ao.Attachment0 = hrpAttachment
-                ao.Attachment1 = flyAttachment
-                ao.MaxTorque = 9e9
-                ao.Responsiveness = 200
-                ao.Parent = hrp
-
-                -- snap flyPart to new HRP
-                flyPart.CFrame = hrp.CFrame * CFrame.new(0, CONFIG.PickupHeight, 0)
-            end
+-- Hàm lấy CoinContainer
+local function getCoins()
+    for _, map in pairs(workspace:GetChildren()) do
+        if map:FindFirstChild("CoinContainer") then
+            return map.CoinContainer
         end
     end
 end
 
--- Di chuyển flyPart bằng Tween đến target (vị trí coin + offset)
-local function flyTo(targetPos)
-    if not flyPart then return false, "no flyPart" end
-    local dest = targetPos + Vector3.new(0, CONFIG.PickupHeight, 0)
-    local cur = flyPart.Position
-    local dist = (cur - dest).Magnitude
-    local time = math.max(0.04, dist / math.max(1, CONFIG.Speed))
-    local ok, tween = pcall(function()
-        return TweenService:Create(flyPart, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = CFrame.new(dest)})
-    end)
-    if not ok or not tween then return false, "cannot create tween" end
-    tween:Play()
-    -- wait for completion but with a safe timeout
-    local finished = false
-    local con
-    con = tween.Completed:Connect(function() finished = true end)
-    local start = tick()
-    while not finished and tick() - start < time + 1.0 do
-        task.wait(0.05)
+-- Bay mượt bằng Lerp
+local function smoothMove(targetPos)
+    local steps = 40 -- số bước bay
+    local start = flyPart.Position
+    for i = 1, steps do
+        local newPos = start:Lerp(targetPos + Vector3.new(0,3,0), i/steps)
+        flyPart.CFrame = CFrame.new(newPos)
+        task.wait(0.02) -- tốc độ bay (giảm số này = nhanh hơn)
     end
-    pcall(function() con:Disconnect() end)
-    return finished, nil
 end
 
--- Main collect loop
-local function collectLoop()
-    notify("AutoFarm", "Bắt đầu", 2)
-    while running do
-        -- ensure HRP and flyPart exist
-        local hrp = getHRP()
-        if not hrp then
-            task.wait(0.5)
-            goto CONT
-        end
-        if not flyPart then
-            local ok, err = createFlySystem()
-            if not ok then
-                notify("AutoFarm", "Lỗi tạo flyPart: "..tostring(err), 3)
-                running = false
-                break
-            end
-        end
+-- Farm logic
+local farming = false
 
-        -- scan coins
-        local coins = findCoins()
-        if #coins == 0 then
-            -- không tìm thấy coin
-            task.wait(1)
-            goto CONT
-        end
-
-        -- tìm coin gần nhất so với flyPart
-        local nearest, nd = nil, math.huge
-        for _, c in ipairs(coins) do
-            if c and c.Parent and c:IsA("BasePart") then
-                local ok, pos = pcall(function() return c.Position end)
-                if ok and pos then
-                    local d = (flyPart.Position - pos).Magnitude
-                    if d < nd and d <= CONFIG.MaxCoinDistance then
-                        nd = d; nearest = c
+local function autoFarm()
+    while farming do
+        local container = getCoins()
+        if container then
+            local coins = container:GetChildren()
+            if #coins > 0 then
+                local nearest, dist = nil, math.huge
+                for _, coin in pairs(coins) do
+                    if coin:IsA("BasePart") then
+                        local d = (flyPart.Position - coin.Position).Magnitude
+                        if d < dist then
+                            nearest, dist = coin, d
+                        end
                     end
                 end
-            end
-        end
-
-        if nearest then
-            -- debug
-            -- print("Going to coin:", nearest:GetFullName())
-            local success, err = pcall(function()
-                local moved, merr = flyTo(nearest.Position)
-                if not moved then
-                    -- không đến đc (timeout) -> bỏ qua
-                    -- print("flyTo failed:", merr)
-                else
-                    -- đợi tí để coin được pickup
-                    task.wait(CONFIG.PickupDelay)
+                if nearest then
+                    smoothMove(nearest.Position)
                 end
-            end)
-            if not success then
-                -- print("Error during fly:", err)
             end
-        else
-            task.wait(0.6)
         end
-
-        ::CONT::
-        task.wait(CONFIG.ScanDelay)
+        task.wait(0.1)
     end
-    -- dừng -> dọn
-    destroyFlySystem()
-    notify("AutoFarm", "Stopped & cleaned", 2)
 end
 
--- Start / Stop functions
-local function startAF()
-    if running then return end
-    running = true
-    -- tạo fly system
-    local ok, err = createFlySystem()
-    if not ok then
-        notify("AutoFarm", "Không thể tạo fly system: "..tostring(err), 4)
-        running = false
-        return
-    end
-    -- attach characterAdded handler để recreate attachments khi respawn
-    if not charAddedConn then
-        charAddedConn = player.CharacterAdded:Connect(onCharacterAdded)
-    end
-    -- spawn loop
-    task.spawn(function()
-        local success, e = pcall(collectLoop)
-        if not success then
-            notify("AutoFarm", "Lỗi: "..tostring(e), 5)
-            running = false
-            destroyFlySystem()
-        end
-    end)
-    status.Text = "Status: ON"
-    toggle.Text = "Stop"
-    toggle.BackgroundColor3 = Color3.fromRGB(180,60,60)
-end
-
-local function stopAF()
-    if not running then return end
-    running = false
-    status.Text = "Status: OFF"
-    toggle.Text = "Start"
-    toggle.BackgroundColor3 = Color3.fromRGB(75,150,75)
-    -- disconnect charAddedConn
-    if charAddedConn then
-        pcall(function() charAddedConn:Disconnect() end)
-        charAddedConn = nil
-    end
-    -- destroy fly system (collectLoop sẽ làm nhưng đảm bảo)
-    destroyFlySystem()
-end
-
-toggle.MouseButton1Click:Connect(function()
-    if running then stopAF() else startAF() end
-end)
-
--- cleanup on script unload / player leaving
-player.AncestryChanged:Connect(function()
-    if not player:IsDescendantOf(game) then
-        stopAF()
+-- Nút bật/tắt
+toggleBtn.MouseButton1Click:Connect(function()
+    farming = not farming
+    if farming then
+        toggleBtn.Text = "Stop Farm"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+        status.Text = "Status: ON"
+        status.TextColor3 = Color3.fromRGB(100,255,100)
+        task.spawn(autoFarm)
+    else
+        toggleBtn.Text = "Start Farm"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
+        status.Text = "Status: OFF"
+        status.TextColor3 = Color3.fromRGB(255,100,100)
     end
 end)
-
-print("[AutoFarm Align] script loaded")
