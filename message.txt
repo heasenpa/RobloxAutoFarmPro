@@ -1,89 +1,85 @@
--- AutoFarm Smooth Fly (Heartbeat version, no tele)
--- by ChatGPT
-
+-- Simple AutoFarm for Codex Mobile
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
-local root = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
 
--- GUI
-local ScreenGui = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local Button = Instance.new("TextButton")
+-- Xóa GUI cũ nếu có
+if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI") then
+    LocalPlayer.PlayerGui.FarmGUI:Destroy()
+end
 
-ScreenGui.Parent = game:GetService("CoreGui")
-Frame.Size = UDim2.new(0,150,0,60)
-Frame.Position = UDim2.new(0,10,0,200)
-Frame.BackgroundColor3 = Color3.fromRGB(40,40,40)
-Frame.Parent = ScreenGui
+-- GUI nhỏ gọn
+local gui = Instance.new("ScreenGui")
+gui.Name = "FarmGUI"
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
 
-Button.Size = UDim2.new(1,0,1,0)
-Button.BackgroundColor3 = Color3.fromRGB(80,170,80)
-Button.TextColor3 = Color3.new(1,1,1)
-Button.Font = Enum.Font.SourceSansBold
-Button.Text = "Start Farm"
-Button.Parent = Frame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 180, 0, 100)
+frame.Position = UDim2.new(0, 10, 0, 250)
+frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Parent = gui
 
--- AutoFarm logic
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Size = UDim2.new(1, -20, 0, 40)
+toggleBtn.Position = UDim2.new(0, 10, 0, 10)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
+toggleBtn.Text = "Start Farm"
+toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
+toggleBtn.Font = Enum.Font.SourceSansBold
+toggleBtn.TextSize = 18
+toggleBtn.Parent = frame
+
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -20, 0, 30)
+status.Position = UDim2.new(0, 10, 0, 60)
+status.BackgroundTransparency = 1
+status.Text = "Status: OFF"
+status.TextColor3 = Color3.fromRGB(255,100,100)
+status.Font = Enum.Font.SourceSans
+status.TextSize = 16
+status.Parent = frame
+
+-- Farm logic
 local farming = false
-local flyConn
 
-local function getNearestCoin()
-    local nearest, dist = nil, math.huge
-    for _,v in pairs(workspace:GetDescendants()) do
-        if v:IsA("MeshPart") and v.Name == "Coin" then
-            local d = (root.Position - v.Position).Magnitude
-            if d < dist then
-                nearest = v
-                dist = d
-            end
+local function getCoins()
+    for _, map in pairs(workspace:GetChildren()) do
+        if map:FindFirstChild("CoinContainer") then
+            return map.CoinContainer
         end
     end
-    return nearest
 end
 
-local function smoothFlyTo(targetPos)
-    if flyConn then flyConn:Disconnect() end
-    flyConn = RunService.Heartbeat:Connect(function(dt)
-        if not farming then flyConn:Disconnect() return end
-        if not root or not root.Parent then return end
-
-        local currentPos = root.Position
-        local direction = (targetPos - currentPos)
-        local distance = direction.Magnitude
-        if distance < 4 then
-            flyConn:Disconnect()
-        else
-            local move = direction.Unit * (60 * dt) -- speed 60
-            root.CFrame = CFrame.new(currentPos + move)
-        end
-    end)
-end
-
-local function startFarm()
-    farming = true
+local function autoFarm()
     while farming do
-        local coin = getNearestCoin()
-        if coin then
-            smoothFlyTo(coin.Position + Vector3.new(0,3,0))
+        local container = getCoins()
+        if container and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            for _, coin in pairs(container:GetChildren()) do
+                if coin:IsA("BasePart") and farming then
+                    LocalPlayer.Character:PivotTo(coin.CFrame)
+                    task.wait(1)
+                end
+            end
         end
         task.wait(0.5)
     end
 end
 
-local function stopFarm()
-    farming = false
-    if flyConn then flyConn:Disconnect() end
-end
-
-Button.MouseButton1Click:Connect(function()
-    if not farming then
-        Button.Text = "Stop Farm"
-        Button.BackgroundColor3 = Color3.fromRGB(200,80,80)
-        startFarm()
+toggleBtn.MouseButton1Click:Connect(function()
+    farming = not farming
+    if farming then
+        toggleBtn.Text = "Stop Farm"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
+        status.Text = "Status: ON"
+        status.TextColor3 = Color3.fromRGB(100,255,100)
+        task.spawn(autoFarm)
     else
-        Button.Text = "Start Farm"
-        Button.BackgroundColor3 = Color3.fromRGB(80,170,80)
-        stopFarm()
+        toggleBtn.Text = "Start Farm"
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
+        status.Text = "Status: OFF"
+        status.TextColor3 = Color3.fromRGB(255,100,100)
     end
 end)
+
