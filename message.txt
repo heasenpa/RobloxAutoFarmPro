@@ -1,4 +1,4 @@
--- AutoFarm Tween Part (Codex Mobile Friendly)
+-- AutoFarm Tween FlyPart (Fix đứng im)
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
@@ -43,7 +43,7 @@ status.Parent = frame
 
 -- FlyPart vô hình
 local flyPart = Instance.new("Part")
-flyPart.Anchored = true
+flyPart.Anchored = false
 flyPart.CanCollide = false
 flyPart.Transparency = 1
 flyPart.Size = Vector3.new(6,1,6)
@@ -83,7 +83,7 @@ local function flyTo(targetPos)
     local tween = TweenService:Create(
         flyPart,
         TweenInfo.new(time, Enum.EasingStyle.Linear),
-        {Position = targetPos + Vector3.new(0,3,0)} -- bay cao hơn coin 1 chút
+        {CFrame = CFrame.new(targetPos + Vector3.new(0,3,0))}
     )
     tween:Play()
     tween.Completed:Wait()
