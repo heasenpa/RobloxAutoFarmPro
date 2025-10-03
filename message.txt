@@ -1,44 +1,57 @@
--- AutoFarm with GUI (OrionLib) + Octree
--- Usage: paste into executor. Press the Start toggle in the GUI to run.
+-- AutoFarm GUI (No external UI libs)
+-- Dán vào executor và chạy trực tiếp
 
--- ====== Config / Libraries ======
+-- ===== Services & cơ bản =====
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local StarterGui = game:GetService("StarterGui")
+
 local player = Players.LocalPlayer
 
--- Octree library (same source used previously)
-local Octree = loadstring(game:HttpGet("https://raw.githubusercontent.com/Sleitnick/rbxts-octo-tree/main/src/init.lua", true))()
+-- ===== Config mặc định (có thể chỉnh trong GUI) =====
+local CONFIG = {
+    Radius = 200,       -- bán kính tìm coin (m)
+    Cooldown = 0.12,    -- thời gian chờ sau khi lấy 1 coin (s)
+    Speed = 50,         -- tốc độ ảo để tính thời gian di chuyển (m/s)
+    LerpStep = 0.03,    -- bước chờ mỗi lần lerp
+}
 
--- Orion UI
-local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+-- ===== State =====
+local State = {
+    Running = false,
+    FoundCoins = {},
+    Marked = {},       -- [instance] = true khi đã lấy/đánh dấu
+    coinList = {},     -- tạm lưu coin hiện có
+    coinContainer = nil,
+    connections = {},
+}
 
--- ====== Global state ======
-local AutoFarm = {}
-AutoFarm.octree = Octree.new()
-AutoFarm.touched = {} -- [coin] = true
-AutoFarm.connections = {} -- store connections to disconnect later
-AutoFarm.coinContainer = nil
-AutoFarm.running = false
-AutoFarm.radius = 200
-AutoFarm.walkspeed = 30
-AutoFarm.cooldown = 0.1
-AutoFarm.moveStep = 0.04 -- internal lerp step
-AutoFarm.scanInterval = 1 -- when no coins found
-AutoFarm.populateConn = nil
-AutoFarm.addedConn = nil
-AutoFarm.removingConn = nil
-
--- ====== Helpers ======
-local function notify(title, text, duration)
+-- ===== Helpers =====
+local function notify(title, text, dur)
     pcall(function()
-        StarterGui:SetCore("SendNotification", {Title = title or "AutoFarm", Text = text or "", Duration = duration or 3})
+        StarterGui:SetCore("SendNotification", {Title = title or "AutoFarm", Text = text or "", Duration = dur or 3})
     end)
 end
 
-local function FindMap()
-    -- Find map by searching for "Spawns" child but not the Lobby
+local function safeDisconnect(conn)
+    if conn and typeof(conn) == "RBXScriptConnection" and conn.Connected then
+        pcall(function() conn:Disconnect() end)
+    end
+end
+
+local function getCharacter()
+    return player.Character or player.CharacterAdded:Wait()
+end
+
+local function getHumanoidRootPart()
+    local char = player.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+end
+
+-- Tìm map có "Spawns" (không phải Lobby) => trả về parent map
+local function findMap()
     for _, v in pairs(Workspace:GetDescendants()) do
         if v.Name == "Spawns" and v.Parent and v.Parent.Name ~= "Lobby" then
             return v.Parent
@@ -47,292 +60,373 @@ local function FindMap()
     return nil
 end
 
-local function FindCoinContainer()
-    local map = FindMap()
-    if not map then return nil end
-    return map:FindFirstChild("CoinContainer") or map:FindFirstChild("Coin_Container") or map:FindFirstChild("Coins")
+-- Tìm CoinContainer: ưu tiên tìm trong map, nếu không tìm thì trả về nil
+local function findCoinContainer()
+    -- cố gắng tìm theo map
+    local map = findMap()
+    if map then
+        local cand = map:FindFirstChild("CoinContainer") or map:FindFirstChild("Coin_Container") or map:FindFirstChild("Coins")
+        if cand and cand:IsA("Model") then
+            return cand
+        end
+    end
+    -- fallback: tìm bất kỳ Model/Folder tên chứa "Coin" hoặc chứa TouchTransmitter
+    for _, m in pairs(Workspace:GetDescendants()) do
+        if m:IsA("Model") and string.match(string.lower(m.Name), "coin") then
+            return m
+        end
+    end
+    return nil
 end
 
-local function isCoinTouched(coin) return AutoFarm.touched[coin] end
+-- Lấy list các BasePart coin có TouchTransmitter trong container (hoặc toàn workspace nếu container nil)
+local function collectCoinsInContainer(container)
+    local out = {}
+    if container then
+        for _, desc in pairs(container:GetDescendants()) do
+            if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
+                table.insert(out, desc.Parent)
+            end
+        end
+    else
+        for _, desc in pairs(Workspace:GetDescendants()) do
+            if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
+                -- lọc những phần quá lớn/không giống coin bằng tên parent
+                local name = tostring(desc.Parent.Name):lower()
+                if string.find(name, "coin") or string.find(name, "beach") or string.find(name, "ball") or #tostring(desc.Parent.Name) < 30 then
+                    table.insert(out, desc.Parent)
+                end
+            end
+        end
+    end
+    return out
+end
 
-local function markCoinTouched(coin)
+-- Hàm trả nearest coin trong radius (bỏ qua coin đã mark)
+local function getNearestCoinWithinRadius(radius)
+    local hrp = getHumanoidRootPart()
+    if not hrp then return nil end
+    local best, bestDist = nil, math.huge
+    for _, coin in pairs(State.coinList) do
+        if coin and coin.Parent and coin:IsA("BasePart") and not State.Marked[coin] then
+            local ok, pos = pcall(function() return coin.Position end)
+            if ok and pos then
+                local dist = (hrp.Position - pos).Magnitude
+                if dist < bestDist and dist <= radius then
+                    bestDist = dist
+                    best = coin
+                end
+            end
+        end
+    end
+    return best, bestDist
+end
+
+-- Mark coin đã lấy (vì coin có thể bị destroy, ta vẫn đánh dấu)
+local function markCoin(coin)
     if not coin then return end
-    AutoFarm.touched[coin] = true
-    local node = AutoFarm.octree:FindFirstNode(coin)
-    if node then
-        AutoFarm.octree:RemoveNode(node)
-    end
-end
-
-local function disconnectConn(conn)
-    if conn and conn.Connected then
-        pcall(function() conn:Disconnect() end)
-    end
-end
-
-local function cleanup()
-    -- disconnect stored connections
-    for _, c in pairs(AutoFarm.connections) do
-        disconnectConn(c)
-    end
-    AutoFarm.connections = {}
-    disconnectConn(AutoFarm.addedConn)
-    disconnectConn(AutoFarm.removingConn)
-    AutoFarm.octree:ClearAllNodes()
-    table.clear(AutoFarm.touched)
-end
-
--- track when TouchTransmitter removed => coin probably touched
-local function setupTouchTracking(coin)
-    if not coin or not coin:IsA("BasePart") then return end
-    local touch = coin:FindFirstChildWhichIsA("TouchTransmitter")
-    if not touch then return end
-    local conn
-    conn = touch.AncestryChanged:Connect(function(_, parent)
-        if parent == nil then
-            markCoinTouched(coin)
-            disconnectConn(conn)
-        end
-    end)
-    table.insert(AutoFarm.connections, conn)
-end
-
-local function setupPositionTracking(coin)
-    if not coin or not coin:IsA("BasePart") then return end
-    local lastY = coin.Position.Y
-    local conn = coin:GetPropertyChangedSignal("Position"):Connect(function()
-        local curY = coin.Position.Y
-        if curY ~= lastY then
-            markCoinTouched(coin)
-            disconnectConn(conn)
-            pcall(function() coin:Destroy() end)
-        end
-    end)
-    table.insert(AutoFarm.connections, conn)
-end
-
-local function populateOctree()
-    -- clear and reindex current coins
-    AutoFarm.octree:ClearAllNodes()
-    if not AutoFarm.coinContainer then return end
-    for _, desc in pairs(AutoFarm.coinContainer:GetDescendants()) do
-        if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
-            local parentCoin = desc.Parent
-            if not isCoinTouched(parentCoin) then
-                AutoFarm.octree:CreateNode(parentCoin.Position, parentCoin)
-                setupTouchTracking(parentCoin)
-                setupPositionTracking(parentCoin)
-            end
+    State.Marked[coin] = true
+    -- cố gắng remove khỏi coinList nhanh
+    for i = #State.coinList, 1, -1 do
+        if State.coinList[i] == coin then
+            table.remove(State.coinList, i)
         end
     end
-
-    -- listen for future additions
-    AutoFarm.addedConn = AutoFarm.coinContainer.DescendantAdded:Connect(function(desc)
-        if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
-            local parentCoin = desc.Parent
-            if not isCoinTouched(parentCoin) then
-                AutoFarm.octree:CreateNode(parentCoin.Position, parentCoin)
-                setupTouchTracking(parentCoin)
-                setupPositionTracking(parentCoin)
-            end
-        end
-    end)
-
-    AutoFarm.removingConn = AutoFarm.coinContainer.DescendantRemoving:Connect(function(desc)
-        if desc:IsA("TouchTransmitter") and desc.Parent and desc.Parent:IsA("BasePart") then
-            local parentCoin = desc.Parent
-            markCoinTouched(parentCoin)
-        end
-    end)
 end
 
-local function moveToPositionSlowly(targetPos, duration)
-    if not player.Character or not player.Character.PrimaryPart then return end
-    local startPos = player.Character.PrimaryPart.Position
+-- Lerp di chuyển mượt từ vị trí hiện tại đến target (sử dụng PivotTo)
+local function moveToSmooth(targetPos, duration)
+    local char = player.Character
+    if not char then return false end
+    local hrp = getHumanoidRootPart()
+    if not hrp then return false end
+
+    local startPos = hrp.Position
     local t0 = tick()
     if duration <= 0 then
-        -- instant pivot
-        pcall(function() player.Character:PivotTo(CFrame.new(targetPos)) end)
-        return
+        pcall(function() char:PivotTo(CFrame.new(targetPos + Vector3.new(0,2,0))) end)
+        return true
     end
+
     while true do
-        if not AutoFarm.running then break end
-        if not player.Character or not player.Character.PrimaryPart then break end
+        if not State.Running then return false end
+        if not player.Character or not player.Character.Parent then return false end
         local elapsed = tick() - t0
         local alpha = math.min(elapsed / duration, 1)
         local newPos = startPos:Lerp(targetPos, alpha)
-        pcall(function() player.Character:PivotTo(CFrame.new(newPos)) end)
+        pcall(function() char:PivotTo(CFrame.new(newPos + Vector3.new(0,2,0))) end)
         if alpha >= 1 then break end
-        task.wait(AutoFarm.moveStep)
+        task.wait(CONFIG.LerpStep)
     end
+    return true
 end
 
--- main collect loop
+-- Hàm chính: chạy vòng lấy coin
 local function collectLoop()
-    -- ensure coinContainer present
-    AutoFarm.coinContainer = FindCoinContainer()
-    if not AutoFarm.coinContainer then
-        notify("AutoFarm", "CoinContainer not found. Stopping.", 4)
-        AutoFarm.running = false
-        return
+    -- update coinContainer
+    State.coinContainer = findCoinContainer()
+    if State.coinContainer then
+        State.coinList = collectCoinsInContainer(State.coinContainer)
+    else
+        -- fallback scan toàn workspace
+        State.coinList = collectCoinsInContainer(nil)
     end
 
-    populateOctree()
+    notify("AutoFarm", "Bắt đầu AutoFarm. Coins found: " .. tostring(#State.coinList), 3)
 
-    while AutoFarm.running do
-        if not player.Character or not player.Character.PrimaryPart then
+    while State.Running do
+        -- nếu character bị mất thì chờ
+        if not player.Character or not player.Character.Parent then
             task.wait(0.5)
-            goto continue
+            goto continue_loop
         end
 
-        local nearest = AutoFarm.octree:GetNearest(player.Character.PrimaryPart.Position, AutoFarm.radius, 1)[1]
-        if nearest and nearest.Object and nearest.Object:IsA("BasePart") then
-            local coin = nearest.Object
-            if not isCoinTouched(coin) then
-                local target = coin.Position
-                local dist = (player.Character.PrimaryPart.Position - target).Magnitude
-                local duration = math.max(0.01, dist / AutoFarm.walkspeed)
-                -- re-evaluate nearest while moving (simple approach)
-                moveToPositionSlowly(target, duration)
-                markCoinTouched(coin)
-                task.wait(AutoFarm.cooldown)
+        -- nếu coinList rỗng -> re-scan
+        if #State.coinList == 0 then
+            -- tự động rescan
+            State.coinContainer = State.coinContainer or findCoinContainer()
+            State.coinList = collectCoinsInContainer(State.coinContainer)
+            if #State.coinList == 0 then
+                -- chờ 1s trước khi thử lại
+                task.wait(1)
+                goto continue_loop
+            end
+        end
+
+        local coin, dist = getNearestCoinWithinRadius(CONFIG.Radius)
+        if coin then
+            -- compute duration = dist / speed
+            local dur = math.max(0.01, dist / math.max(1, CONFIG.Speed))
+            local ok = moveToSmooth(coin.Position, dur)
+            if ok then
+                markCoin(coin)
+                -- optional small wait
+                task.wait(CONFIG.Cooldown)
             else
-                -- already touched, wait shortly
-                task.wait(0.2)
+                -- nếu movement fail (ví dụ bị ngắt), mark thử hoặc chờ
+                task.wait(0.5)
             end
         else
-            -- nothing nearby, wait then re-scan
-            task.wait(AutoFarm.scanInterval)
-            populateOctree() -- re-populate to catch newly spawned coins
+            -- không coin trong radius -> re-populate và chờ
+            State.coinList = collectCoinsInContainer(State.coinContainer)
+            task.wait(0.6)
         end
 
-        ::continue::
+        ::continue_loop::
+        task.wait() -- allow other threads
     end
 
-    cleanup()
+    -- khi out of loop => dọn
+    notify("AutoFarm", "AutoFarm stopped.", 2)
 end
 
--- ====== Public control functions ======
-local function StartAutoFarm()
-    if AutoFarm.running then return end
-    AutoFarm.running = true
-    AutoFarm.coinContainer = FindCoinContainer()
-    if not AutoFarm.coinContainer then
-        notify("AutoFarm", "Could not find map/CoinContainer.", 4)
-        AutoFarm.running = false
-        return
+-- Cleanup connections and tables
+local function cleanAll()
+    for _, c in pairs(State.connections) do
+        safeDisconnect(c)
     end
-    notify("AutoFarm", "Starting autofarm...", 3)
-    task.spawn(function()
-        pcall(collectLoop)
+    State.connections = {}
+    State.Marked = {}
+    State.coinList = {}
+    State.coinContainer = nil
+    notify("AutoFarm", "CleanUp done.", 2)
+end
+
+-- ===== GUI tạo thủ công (dễ nhìn, không cần lib ngoài) =====
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SimpleAutoFarmGUI"
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999
+
+local frame = Instance.new("Frame", screenGui)
+frame.Size = UDim2.new(0, 360, 0, 220)
+frame.Position = UDim2.new(0, 20, 0, 40)
+frame.BackgroundTransparency = 0.1
+frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 36)
+title.Position = UDim2.new(0, 0, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "AutoFarm (GUI mới)"
+title.TextColor3 = Color3.fromRGB(255,255,255)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+
+local statusLabel = Instance.new("TextLabel", frame)
+statusLabel.Size = UDim2.new(1, -20, 0, 24)
+statusLabel.Position = UDim2.new(0, 10, 0, 40)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Text = "Status: Stopped"
+statusLabel.TextColor3 = Color3.fromRGB(200,200,200)
+statusLabel.Font = Enum.Font.SourceSans
+statusLabel.TextSize = 16
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Start/Stop button
+local startBtn = Instance.new("TextButton", frame)
+startBtn.Size = UDim2.new(0, 120, 0, 36)
+startBtn.Position = UDim2.new(0, 10, 0, 70)
+startBtn.Text = "Start"
+startBtn.Font = Enum.Font.SourceSans
+startBtn.TextSize = 18
+startBtn.BackgroundColor3 = Color3.fromRGB(60,160,60)
+startBtn.TextColor3 = Color3.fromRGB(255,255,255)
+
+-- CleanUp button
+local cleanBtn = Instance.new("TextButton", frame)
+cleanBtn.Size = UDim2.new(0, 120, 0, 36)
+cleanBtn.Position = UDim2.new(0, 140, 0, 70)
+cleanBtn.Text = "CleanUp"
+cleanBtn.Font = Enum.Font.SourceSans
+cleanBtn.TextSize = 18
+cleanBtn.BackgroundColor3 = Color3.fromRGB(180,60,60)
+cleanBtn.TextColor3 = Color3.fromRGB(255,255,255)
+
+-- Re-scan button
+local rescanBtn = Instance.new("TextButton", frame)
+rescanBtn.Size = UDim2.new(0, 120, 0, 28)
+rescanBtn.Position = UDim2.new(0, 10, 0, 116)
+rescanBtn.Text = "Re-scan coins"
+rescanBtn.Font = Enum.Font.SourceSans
+rescanBtn.TextSize = 14
+rescanBtn.BackgroundColor3 = Color3.fromRGB(90,90,90)
+rescanBtn.TextColor3 = Color3.fromRGB(255,255,255)
+
+-- Labels + input boxes cho Radius / Cooldown / Speed
+local function makeLabelAndBox(y, labelText, default)
+    local lab = Instance.new("TextLabel", frame)
+    lab.Size = UDim2.new(0, 110, 0, 22)
+    lab.Position = UDim2.new(0, 10, 0, y)
+    lab.BackgroundTransparency = 1
+    lab.Text = labelText
+    lab.TextXAlignment = Enum.TextXAlignment.Left
+    lab.TextColor3 = Color3.fromRGB(220,220,220)
+    lab.Font = Enum.Font.SourceSans
+    lab.TextSize = 14
+
+    local box = Instance.new("TextBox", frame)
+    box.Size = UDim2.new(0, 120, 0, 24)
+    box.Position = UDim2.new(0, 130, 0, y-2)
+    box.Text = tostring(default)
+    box.ClearTextOnFocus = false
+    box.Font = Enum.Font.SourceSans
+    box.TextSize = 14
+    box.TextColor3 = Color3.fromRGB(20,20,20)
+    box.BackgroundColor3 = Color3.fromRGB(255,255,255)
+    return lab, box
+end
+
+local _, radiusBox = makeLabelAndBox(152, "Radius (m):", CONFIG.Radius)
+local _, cooldownBox = makeLabelAndBox(182, "Cooldown (s):", CONFIG.Cooldown)
+local _, speedBox = makeLabelAndBox(122, "Speed (m/s):", CONFIG.Speed)
+
+-- Keybind hint
+local hint = Instance.new("TextLabel", frame)
+hint.Size = UDim2.new(1, -20, 0, 18)
+hint.Position = UDim2.new(0, 10, 0, 210 - 18)
+hint.BackgroundTransparency = 1
+hint.Text = "Nhấn F để bật/tắt nhanh"
+hint.TextSize = 12
+hint.Font = Enum.Font.SourceSansItalic
+hint.TextColor3 = Color3.fromRGB(170,170,170)
+hint.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Gắn GUI vào PlayerGui
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- ===== GUI events =====
+local collectTask = nil
+local function start()
+    if State.Running then return end
+    -- cập nhật config từ ô textbox (nếu hợp lệ)
+    local r = tonumber(radiusBox.Text)
+    local c = tonumber(cooldownBox.Text)
+    local s = tonumber(speedBox.Text)
+    if r and r > 0 then CONFIG.Radius = r end
+    if c and c >= 0 then CONFIG.Cooldown = c end
+    if s and s > 0 then CONFIG.Speed = s end
+
+    State.Running = true
+    startBtn.Text = "Stop"
+    startBtn.BackgroundColor3 = Color3.fromRGB(200,60,60)
+    statusLabel.Text = "Status: Running"
+    notify("AutoFarm", "AutoFarm started", 2)
+
+    -- spawn loop
+    collectTask = task.spawn(function()
+        local ok, err = pcall(function()
+            collectLoop()
+        end)
+        if not ok then
+            warn("AutoFarm error:", err)
+            notify("AutoFarm", "Lỗi: " .. tostring(err), 4)
+        end
+        -- ensure stopped state after loop ends
+        State.Running = false
+        startBtn.Text = "Start"
+        startBtn.BackgroundColor3 = Color3.fromRGB(60,160,60)
+        statusLabel.Text = "Status: Stopped"
     end)
 end
 
-local function StopAutoFarm()
-    if not AutoFarm.running then return end
-    AutoFarm.running = false
-    notify("AutoFarm", "Stopping autofarm...", 2)
-    -- cleanup will be executed at loop end
+local function stop()
+    if not State.Running then return end
+    State.Running = false
+    statusLabel.Text = "Status: Stopping..."
+    notify("AutoFarm", "Stopping...", 1)
+    -- collectLoop sẽ tự cleanup
 end
 
--- ====== GUI ======
-local Window = OrionLib:MakeWindow({Name = "Auto Farm Hub", HidePremium = false, SaveConfig = true, ConfigFolder = "AutoFarmConfig"})
-
-local FarmTab = Window:MakeTab({
-    Name = "Auto Farm",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
-
--- Start/Stop Toggle
-FarmTab:AddToggle({
-    Name = "Start Auto Farm",
-    Default = false,
-    Callback = function(value)
-        if value then
-            StartAutoFarm()
-        else
-            StopAutoFarm()
-        end
+startBtn.MouseButton1Click:Connect(function()
+    if State.Running then
+        stop()
+    else
+        start()
     end
-})
+end)
 
--- Walkspeed slider
-FarmTab:AddSlider({
-    Name = "Walkspeed (used to compute duration)",
-    Min = 10,
-    Max = 200,
-    Default = AutoFarm.walkspeed,
-    Increment = 1,
-    ValueName = "ws",
-    Callback = function(v)
-        AutoFarm.walkspeed = v
-    end
-})
+cleanBtn.MouseButton1Click:Connect(function()
+    stop()
+    cleanAll()
+end)
 
--- Radius slider
-FarmTab:AddSlider({
-    Name = "Search Radius",
-    Min = 50,
-    Max = 1000,
-    Default = AutoFarm.radius,
-    Increment = 10,
-    ValueName = "radius",
-    Callback = function(v)
-        AutoFarm.radius = v
-    end
-})
+rescanBtn.MouseButton1Click:Connect(function()
+    State.coinContainer = findCoinContainer()
+    State.coinList = collectCoinsInContainer(State.coinContainer)
+    notify("AutoFarm", "Re-scan complete. Coins found: ".. tostring(#State.coinList), 2)
+end)
 
--- Cooldown between teleports (safety)
-FarmTab:AddSlider({
-    Name = "Cooldown between pickups (s)",
-    Min = 0,
-    Max = 2,
-    Default = AutoFarm.cooldown,
-    Increment = 0.05,
-    ValueName = "cd",
-    Callback = function(v)
-        AutoFarm.cooldown = v
-    end
-})
+-- Validation: khi thay đổi textbox, cập nhật ngay config (nếu giá trị hợp lệ)
+radiusBox.FocusLost:Connect(function(enter)
+    local v = tonumber(radiusBox.Text)
+    if v and v > 0 then CONFIG.Radius = v else radiusBox.Text = tostring(CONFIG.Radius) end
+end)
+cooldownBox.FocusLost:Connect(function(enter)
+    local v = tonumber(cooldownBox.Text)
+    if v and v >= 0 then CONFIG.Cooldown = v else cooldownBox.Text = tostring(CONFIG.Cooldown) end
+end)
+speedBox.FocusLost:Connect(function(enter)
+    local v = tonumber(speedBox.Text)
+    if v and v > 0 then CONFIG.Speed = v else speedBox.Text = tostring(CONFIG.Speed) end
+end)
 
-FarmTab:AddButton({
-    Name = "Force Re-scan / Populate Octree",
-    Callback = function()
-        AutoFarm.coinContainer = FindCoinContainer()
-        if AutoFarm.coinContainer then
-            populateOctree()
-            notify("AutoFarm", "Re-populated coin list.", 2)
-        else
-            notify("AutoFarm", "CoinContainer not found.", 2)
-        end
-    end
-})
-
-FarmTab:AddButton({
-    Name = "Force Stop & CleanUp",
-    Callback = function()
-        StopAutoFarm()
-        cleanup()
-        notify("AutoFarm", "CleanUp done.", 2)
-    end
-})
-
-FarmTab:AddLabel("Tip: If the script can't find map, make sure the game has a model with child named 'Spawns' and not 'Lobby'.")
-
-OrionLib:Init()
-
--- Optional: Keybind toggle (F) for Start/Stop
-local UserInputService = game:GetService("UserInputService")
-UserInputService.InputBegan:Connect(function(inp, gp)
+-- Keybind F to toggle
+UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if inp.KeyCode == Enum.KeyCode.F then
-        if AutoFarm.running then
-            StopAutoFarm()
-        else
-            StartAutoFarm()
-        end
+    if input.KeyCode == Enum.KeyCode.F then
+        if State.Running then stop() else start() end
     end
+end)
+
+-- Character removal (respawn) -> clean marks so we don't keep stale refs
+player.CharacterRemoving:Connect(function()
+    -- clear marked table and coin list; loop will re-populate once respawn
+    State.Marked = {}
+    State.coinList = {}
 end)
 
 -- End of script
