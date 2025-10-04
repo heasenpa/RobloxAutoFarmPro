@@ -248,32 +248,28 @@ end)
 
 setToggle(false) -- Mặc định OFF
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 
--- Biến totalCoins toàn trận
+-- ====== Coin Counter GUI (gắn vào menuFrame) ======
 _G.TotalCoinsFarmed = _G.TotalCoinsFarmed or 0
 
--- Hàm tạo GUI trong menu lớn
 local function setupCoinGUI()
     local label = menuFrame:FindFirstChild("CoinLabel")
     if not label then
         label = Instance.new("TextLabel")
         label.Name = "CoinLabel"
-        label.Size = UDim2.new(1, -20, 0, 30)  -- nhỏ gọn để vừa menu
-        label.Position = UDim2.new(0, 10, 0, 180)
-        label.BackgroundTransparency = 1
+        label.Size = UDim2.new(1, -20, 0, 30)
+        label.Position = UDim2.new(0, 10, 0, 100)
+        label.BackgroundColor3 = Color3.fromRGB(30,30,30)
+        label.BackgroundTransparency = 0.2
         label.TextColor3 = Color3.fromRGB(255,255,0)
-        label.TextSize = 15
-        label.Font = Enum.Font.GothamBold
-        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextSize = 16
+        label.Font = Enum.Font.SourceSansBold
         label.Text = "Coins: 0/40 | Total: 0"
         label.Parent = menuFrame
     end
     return label
 end
 
--- Hàm gắn coinLabel gốc
 local function hookGameCoinLabel(label)
     local coinLabel = LocalPlayer:WaitForChild("PlayerGui")
         :WaitForChild("MainGUI")
@@ -290,20 +286,16 @@ local function hookGameCoinLabel(label)
 
     local function updateCoins()
         local amount = tonumber(coinLabel.Text) or 0
-
-        -- Nếu coin tăng thì cộng vào total
         if amount > lastAmount then
             _G.TotalCoinsFarmed += (amount - lastAmount)
         end
         lastAmount = amount
 
-        -- Update GUI
         label.Text = "Coins: " .. amount .. "/40 | Total: " .. _G.TotalCoinsFarmed
 
         if amount >= 40 then
             label.TextColor3 = Color3.fromRGB(255,0,0)
             label.Text = "FULL! ("..amount.."/40) | Total: " .. _G.TotalCoinsFarmed .. " - Resetting..."
-            -- Reset nhân vật
             local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if humanoid then humanoid.Health = 0 end
         else
@@ -311,20 +303,15 @@ local function hookGameCoinLabel(label)
         end
     end
 
-    -- Kích hoạt lần đầu
     updateCoins()
-
-    -- Lắng nghe thay đổi
     coinLabel:GetPropertyChangedSignal("Text"):Connect(updateCoins)
 end
 
--- Chạy khi load lần đầu
-local label = setupCoinGUI()
-hookGameCoinLabel(label)
+local coinLabelUI = setupCoinGUI()
+hookGameCoinLabel(coinLabelUI)
 
--- Đảm bảo khi respawn GUI không bị mất
 LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1) -- chờ PlayerGui load
+    task.wait(1)
     local label = setupCoinGUI()
     hookGameCoinLabel(label)
 end)
