@@ -1,4 +1,4 @@
--- Bảng 3fix v2 - Bay tới coin gần nhất, không đổi hướng lung tung, reset khi full coin
+-- Bảng 3fix v3 - Farm coin + Reset khi full
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
@@ -14,7 +14,7 @@ gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 180, 0, 120)
+frame.Size = UDim2.new(0, 180, 0, 150)
 frame.Position = UDim2.new(0, 400, 0, 250)
 frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 frame.BorderSizePixel = 0
@@ -24,7 +24,7 @@ frame.Parent = gui
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 20)
 title.BackgroundTransparency = 1
-title.Text = "Bảng 3fix v2"
+title.Text = "Bảng 3fix v3"
 title.TextColor3 = Color3.fromRGB(255, 255, 0)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 18
@@ -50,9 +50,19 @@ status.Font = Enum.Font.SourceSans
 status.TextSize = 16
 status.Parent = frame
 
+local coinLabel = Instance.new("TextLabel")
+coinLabel.Size = UDim2.new(1, -20, 0, 20)
+coinLabel.Position = UDim2.new(0, 10, 0, 115)
+coinLabel.BackgroundTransparency = 1
+coinLabel.Text = "Coins: 0/40"
+coinLabel.TextColor3 = Color3.fromRGB(200,200,255)
+coinLabel.Font = Enum.Font.SourceSans
+coinLabel.TextSize = 14
+coinLabel.Parent = frame
+
 -- Farm logic
 local farming = false
-local canReset = true -- cooldown để tránh reset liên tục
+local MAX_COINS = 40
 
 local function getCoins()
     for _, map in pairs(workspace:GetChildren()) do
@@ -60,7 +70,6 @@ local function getCoins()
             return map.CoinContainer
         end
     end
-    return nil
 end
 
 local function findNearestCoin()
@@ -73,7 +82,7 @@ local function findNearestCoin()
 
     local nearest, dist = nil, math.huge
     for _, coin in pairs(container:GetChildren()) do
-        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) and coin.Transparency < 1 then
+        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
             local d = (hrp.Position - coin.Position).Magnitude
             if d < dist then
                 dist = d
@@ -98,42 +107,35 @@ local function moveToCoin(coin)
     local finished = false
     tween.Completed:Connect(function()
         finished = true
-        -- Coin game tự thu, nên không cần destroy ở đây nếu không muốn
-        -- if coin and coin.Parent then
-        --     coin:Destroy()
-        -- end
     end)
     tween:Play()
 
     repeat task.wait() until finished
 end
 
-local function isBagFull()
-    local container = getCoins()
-    if not container then return false end
-    local visibleCoinsCount = 0
-    for _, coin in pairs(container:GetChildren()) do
-        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) and coin.Transparency < 1 then
-            visibleCoinsCount = visibleCoinsCount + 1
-        end
+local function getCoinCount()
+    local ok, count = pcall(function()
+        return tonumber(LocalPlayer.PlayerGui.MainGUI.Lobby.Dock.CoinBags.Container.BeachBall.CurrencyFrame.Icon.Coins.Text)
+    end)
+    if ok and count then
+        return count
     end
-    -- print("Visible coins:", visibleCoinsCount) -- dùng debug nếu cần
-    return visibleCoinsCount == 0
+    return 0
 end
 
 local function autoFarm()
     while farming do
-        if isBagFull() and canReset then
-            canReset = false
-            status.Text = "Status: FULL - Resetting..."
-            status.TextColor3 = Color3.fromRGB(255, 150, 0)
-            if LocalPlayer.Character then
-                LocalPlayer.Character:BreakJoints()
-            end
-            task.delay(6, function()
-                canReset = true
-            end)
-            task.wait(1)
+        local currentCoins = getCoinCount()
+        coinLabel.Text = "Coins: " .. currentCoins .. "/" .. MAX_COINS
+
+        if currentCoins >= MAX_COINS then
+            -- Reset khi full
+            farming = false
+            status.Text = "Resetting..."
+            LocalPlayer.Character:BreakJoints()
+            task.wait(5) -- đợi respawn
+            farming = true
+            status.Text = "Status: ON"
         else
             local coin = findNearestCoin()
             if coin then
