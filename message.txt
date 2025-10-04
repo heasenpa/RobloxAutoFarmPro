@@ -248,7 +248,6 @@ end)
 
 setToggle(false) -- Mặc định OFF
 
-Bạn đã gửi
 -- ====== Coin Counter + Reset (Thêm vào menu lớn) ======
 
 _G.TotalCoinsFarmed = _G.TotalCoinsFarmed or 0
@@ -359,3 +358,4 @@ toggleCounterFrame.InputBegan:Connect(function(input)
 end)
 
 setCounterToggle(false) -- mặc định OFF
+
