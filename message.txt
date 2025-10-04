@@ -248,133 +248,83 @@ end)
 
 setToggle(false) -- Mặc định OFF
 
--- ====== Coin Counter + Reset (Thêm vào menu lớn) ======
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
+-- Biến totalCoins toàn trận
 _G.TotalCoinsFarmed = _G.TotalCoinsFarmed or 0
-local coinTracking = false
-local coinRound = 0
 
--- Label hiển thị Coin Counter
-local coinFarmLabel = Instance.new("TextLabel")
-coinFarmLabel.Size = UDim2.new(0.6, 0, 0, 30)
-coinFarmLabel.Position = UDim2.new(0, 10, 0, 100)
-coinFarmLabel.BackgroundTransparency = 1
-coinFarmLabel.Text = "Coin Counter"
-coinFarmLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-coinFarmLabel.Font = Enum.Font.Gotham
-coinFarmLabel.TextSize = 16
-coinFarmLabel.TextXAlignment = Enum.TextXAlignment.Left
-coinFarmLabel.Parent = menuFrame
-
--- Toggle switch
-local toggleCounterFrame = Instance.new("Frame")
-toggleCounterFrame.Size = UDim2.new(0, 50, 0, 25)
-toggleCounterFrame.Position = UDim2.new(1, -60, 0, 100)
-toggleCounterFrame.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-toggleCounterFrame.Parent = menuFrame
-toggleCounterFrame.BorderSizePixel = 0
-
-local counterCorner = Instance.new("UICorner")
-counterCorner.CornerRadius = UDim.new(1, 0)
-counterCorner.Parent = toggleCounterFrame
-
-local counterKnob = Instance.new("Frame")
-counterKnob.Size = UDim2.new(0, 21, 0, 21)
-counterKnob.Position = UDim2.new(0, 2, 0, 2)
-counterKnob.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
-counterKnob.Parent = toggleCounterFrame
-counterKnob.BorderSizePixel = 0
-
-local counterKnobCorner = Instance.new("UICorner")
-counterKnobCorner.CornerRadius = UDim.new(1, 0)
-counterKnobCorner.Parent = counterKnob
-
-local counterStroke = Instance.new("UIStroke")
-counterStroke.Thickness = 1.5
-counterStroke.Color = Color3.fromRGB(150, 80, 255)
-counterStroke.Transparency = 0.3
-counterStroke.Parent = toggleCounterFrame
-
--- Text hiển thị coin round và total
-local coinText = Instance.new("TextLabel")
-coinText.Size = UDim2.new(1, -20, 0, 25)
-coinText.Position = UDim2.new(0, 10, 0, 135)
-coinText.BackgroundTransparency = 1
-coinText.Text = "Round: 0 | Total: " .. tostring(_G.TotalCoinsFarmed)
-coinText.TextColor3 = Color3.fromRGB(0, 255, 0)
-coinText.Font = Enum.Font.GothamBold
-coinText.TextSize = 15
-coinText.TextXAlignment = Enum.TextXAlignment.Left
-coinText.Parent = menuFrame
-
--- Function đổi trạng thái toggle
-local function setCounterToggle(state)
-    if state then
-        TweenService:Create(toggleCounterFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
-            BackgroundColor3 = Color3.fromRGB(150, 80, 255)
-        }):Play()
-        TweenService:Create(counterKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
-            Position = UDim2.new(1, -23, 0, 2),
-            BackgroundColor3 = Color3.fromRGB(255,255,255)
-        }):Play()
-    else
-        TweenService:Create(toggleCounterFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
-            BackgroundColor3 = Color3.fromRGB(60, 60, 80)
-        }):Play()
-        TweenService:Create(counterKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
-            Position = UDim2.new(0, 2, 0, 2),
-            BackgroundColor3 = Color3.fromRGB(200,200,200)
-        }):Play()
+-- Hàm tạo GUI trong menu lớn
+local function setupCoinGUI()
+    local label = menuFrame:FindFirstChild("CoinLabel")
+    if not label then
+        label = Instance.new("TextLabel")
+        label.Name = "CoinLabel"
+        label.Size = UDim2.new(1, -20, 0, 30)  -- nhỏ gọn để vừa menu
+        label.Position = UDim2.new(0, 10, 0, 180)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.fromRGB(255,255,0)
+        label.TextSize = 15
+        label.Font = Enum.Font.GothamBold
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Text = "Coins: 0/40 | Total: 0"
+        label.Parent = menuFrame
     end
+    return label
 end
 
--- Reset Round Coins khi nhân vật respawn
-LocalPlayer.CharacterAdded:Connect(function()
-    coinRound = 0
-    coinText.Text = "Round: " .. coinRound .. " | Total: " .. _G.TotalCoinsFarmed
-end)
-
--- Theo dõi Coin Label gốc trong GUI game
-local function hookGameCoinLabel()
-    local ok, coinLabel = pcall(function()
-        return LocalPlayer.PlayerGui.MainGUI.Lobby.Dock.CoinBags.Container.BeachBall.CurrencyFrame.Icon.Coins
-    end)
-    if not ok or not coinLabel then return end
+-- Hàm gắn coinLabel gốc
+local function hookGameCoinLabel(label)
+    local coinLabel = LocalPlayer:WaitForChild("PlayerGui")
+        :WaitForChild("MainGUI")
+        :WaitForChild("Lobby")
+        :WaitForChild("Dock")
+        :WaitForChild("CoinBags")
+        :WaitForChild("Container")
+        :WaitForChild("BeachBall")
+        :WaitForChild("CurrencyFrame")
+        :WaitForChild("Icon")
+        :WaitForChild("Coins")
 
     local lastAmount = tonumber(coinLabel.Text) or 0
 
-    coinLabel:GetPropertyChangedSignal("Text"):Connect(function()
-        if not coinTracking then return end
+    local function updateCoins()
         local amount = tonumber(coinLabel.Text) or 0
+
+        -- Nếu coin tăng thì cộng vào total
         if amount > lastAmount then
-            local gained = amount - lastAmount
-            _G.TotalCoinsFarmed += gained
-            coinRound += gained
+            _G.TotalCoinsFarmed += (amount - lastAmount)
         end
         lastAmount = amount
 
         -- Update GUI
+        label.Text = "Coins: " .. amount .. "/40 | Total: " .. _G.TotalCoinsFarmed
+
         if amount >= 40 then
-            coinText.TextColor3 = Color3.fromRGB(255, 0, 0)
-            coinText.Text = "FULL! ("..amount.."/40) | Total: " .. _G.TotalCoinsFarmed .. " - Resetting..."
+            label.TextColor3 = Color3.fromRGB(255,0,0)
+            label.Text = "FULL! ("..amount.."/40) | Total: " .. _G.TotalCoinsFarmed .. " - Resetting..."
+            -- Reset nhân vật
             local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
             if humanoid then humanoid.Health = 0 end
         else
-            coinText.TextColor3 = Color3.fromRGB(0, 255, 0)
-            coinText.Text = "Round: " .. coinRound .. " | Total: " .. _G.TotalCoinsFarmed
-        end
-    end)
-end
-
--- Toggle click
-toggleCounterFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        coinTracking = not coinTracking
-        setCounterToggle(coinTracking)
-        if coinTracking then
-            hookGameCoinLabel()
+            label.TextColor3 = Color3.fromRGB(0,255,0)
         end
     end
-end)
 
-setCounterToggle(false) -- mặc định OFF
+    -- Kích hoạt lần đầu
+    updateCoins()
+
+    -- Lắng nghe thay đổi
+    coinLabel:GetPropertyChangedSignal("Text"):Connect(updateCoins)
+end
+
+-- Chạy khi load lần đầu
+local label = setupCoinGUI()
+hookGameCoinLabel(label)
+
+-- Đảm bảo khi respawn GUI không bị mất
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1) -- chờ PlayerGui load
+    local label = setupCoinGUI()
+    hookGameCoinLabel(label)
+end)
