@@ -1,164 +1,68 @@
--- Bảng 3fix v3 - Farm coin + Reset khi full
 local Players = game:GetService("Players")
-local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
-if LocalPlayer.PlayerGui:FindFirstChild("FarmGUI3") then
-    LocalPlayer.PlayerGui.FarmGUI3:Destroy()
-end
-
--- GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "FarmGUI3"
-gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-gui.ResetOnSpawn = false
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 180, 0, 150)
-frame.Position = UDim2.new(0, 400, 0, 250)
-frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Parent = gui
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 20)
-title.BackgroundTransparency = 1
-title.Text = "Bảng 3fix v3"
-title.TextColor3 = Color3.fromRGB(255, 255, 0)
-title.Font = Enum.Font.SourceSansBold
-title.TextSize = 18
-title.Parent = frame
-
-local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(1, -20, 0, 40)
-toggleBtn.Position = UDim2.new(0, 10, 0, 30)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(80, 160, 80)
-toggleBtn.Text = "Start Farm"
-toggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-toggleBtn.Font = Enum.Font.SourceSansBold
-toggleBtn.TextSize = 18
-toggleBtn.Parent = frame
-
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -20, 0, 30)
-status.Position = UDim2.new(0, 10, 0, 80)
-status.BackgroundTransparency = 1
-status.Text = "Status: OFF"
-status.TextColor3 = Color3.fromRGB(255,100,100)
-status.Font = Enum.Font.SourceSans
-status.TextSize = 16
-status.Parent = frame
-
-local coinLabel = Instance.new("TextLabel")
-coinLabel.Size = UDim2.new(1, -20, 0, 20)
-coinLabel.Position = UDim2.new(0, 10, 0, 115)
-coinLabel.BackgroundTransparency = 1
-coinLabel.Text = "Coins: 0/40"
-coinLabel.TextColor3 = Color3.fromRGB(200,200,255)
-coinLabel.Font = Enum.Font.SourceSans
-coinLabel.TextSize = 14
-coinLabel.Parent = frame
-
--- Farm logic
-local farming = false
-local MAX_COINS = 40
-
-local function getCoins()
-    for _, map in pairs(workspace:GetChildren()) do
-        if map:FindFirstChild("CoinContainer") then
-            return map.CoinContainer
-        end
+-- Hàm tạo GUI + logic reset
+local function setupCoinGUI()
+    -- Xóa cũ nếu còn
+    if LocalPlayer.PlayerGui:FindFirstChild("CoinDebug") then
+        LocalPlayer.PlayerGui.CoinDebug:Destroy()
     end
-end
 
-local function findNearestCoin()
-    local character = LocalPlayer.Character
-    if not character then return nil end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local container = getCoins()
-    if not container then return nil end
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "CoinDebug"
+    gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-    local nearest, dist = nil, math.huge
-    for _, coin in pairs(container:GetChildren()) do
-        if coin:IsA("BasePart") and coin.Parent and coin:IsDescendantOf(workspace) then
-            local d = (hrp.Position - coin.Position).Magnitude
-            if d < dist then
-                dist = d
-                nearest = coin
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 220, 0, 50)
+    label.Position = UDim2.new(0.5, -110, 0.05, 0)
+    label.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    label.BackgroundTransparency = 0.3
+    label.TextColor3 = Color3.fromRGB(255,255,0)
+    label.TextSize = 18
+    label.Font = Enum.Font.SourceSansBold
+    label.Text = "Coins: ?"
+    label.Parent = gui
+
+    -- Lấy CoinLabel trong GUI gốc của game
+    local coinLabel = LocalPlayer:WaitForChild("PlayerGui")
+        :WaitForChild("MainGUI")
+        :WaitForChild("Lobby")
+        :WaitForChild("Dock")
+        :WaitForChild("CoinBags")
+        :WaitForChild("Container")
+        :WaitForChild("BeachBall")
+        :WaitForChild("CurrencyFrame")
+        :WaitForChild("Icon")
+        :WaitForChild("Coins")
+
+    -- Hàm update
+    local function updateCoins()
+        local amount = tonumber(coinLabel.Text) or 0
+        label.Text = "Coins: " .. amount .. "/40"
+
+        if amount >= 40 then
+            label.TextColor3 = Color3.fromRGB(255,0,0)
+            label.Text = "FULL! ("..amount.."/40) - Resetting..."
+
+            -- Reset nhân vật
+            local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.Health = 0
             end
-        end
-    end
-    return nearest
-end
-
-local function moveToCoin(coin)
-    local character = LocalPlayer.Character
-    if not character then return end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp or not coin or not coin.Parent then return end
-
-    local distance = (hrp.Position - coin.Position).Magnitude
-    local speed = 20
-    local time = math.clamp(distance / speed, 0.3, 3)
-
-    local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = coin.CFrame + Vector3.new(0,3,0)})
-    local finished = false
-    tween.Completed:Connect(function()
-        finished = true
-    end)
-    tween:Play()
-
-    repeat task.wait() until finished
-end
-
-local function getCoinCount()
-    local ok, count = pcall(function()
-        return tonumber(LocalPlayer.PlayerGui.MainGUI.Lobby.Dock.CoinBags.Container.BeachBall.CurrencyFrame.Icon.Coins.Text)
-    end)
-    if ok and count then
-        return count
-    end
-    return 0
-end
-
-local function autoFarm()
-    while farming do
-        local currentCoins = getCoinCount()
-        coinLabel.Text = "Coins: " .. currentCoins .. "/" .. MAX_COINS
-
-        if currentCoins >= MAX_COINS then
-            -- Reset khi full
-            farming = false
-            status.Text = "Resetting..."
-            LocalPlayer.Character:BreakJoints()
-            task.wait(5) -- đợi respawn
-            farming = true
-            status.Text = "Status: ON"
         else
-            local coin = findNearestCoin()
-            if coin then
-                moveToCoin(coin)
-            else
-                task.wait(0.1)
-            end
+            label.TextColor3 = Color3.fromRGB(0,255,0)
         end
     end
+
+    updateCoins()
+    coinLabel:GetPropertyChangedSignal("Text"):Connect(updateCoins)
 end
 
-toggleBtn.MouseButton1Click:Connect(function()
-    farming = not farming
-    if farming then
-        toggleBtn.Text = "Stop Farm"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 80, 80)
-        status.Text = "Status: ON"
-        status.TextColor3 = Color3.fromRGB(100,255,100)
-        task.spawn(autoFarm)
-    else
-        toggleBtn.Text = "Start Farm"
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(80,160,80)
-        status.Text = "Status: OFF"
-        status.TextColor3 = Color3.fromRGB(255,100,100)
-    end
+-- Tạo lần đầu
+setupCoinGUI()
+
+-- Tạo lại mỗi khi nhân vật respawn
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1) -- chờ PlayerGui load lại
+    setupCoinGUI()
 end)
