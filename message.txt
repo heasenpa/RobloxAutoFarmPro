@@ -301,7 +301,7 @@ coinText.Size = UDim2.new(1, -20, 0, 25)
 coinText.Position = UDim2.new(0, 10, 0, 135)
 coinText.BackgroundTransparency = 1
 coinText.Text = "Round: 0 | Total: " .. tostring(_G.TotalCoinsFarmed)
-coinText.TextColor3 = Color3.fromRGB(255, 255, 0)
+coinText.TextColor3 = Color3.fromRGB(0, 255, 0)
 coinText.Font = Enum.Font.GothamBold
 coinText.TextSize = 15
 coinText.TextXAlignment = Enum.TextXAlignment.Left
@@ -310,11 +310,21 @@ coinText.Parent = menuFrame
 -- Function đổi trạng thái toggle
 local function setCounterToggle(state)
     if state then
-        TweenService:Create(toggleCounterFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundColor3 = Color3.fromRGB(150, 80, 255)}):Play()
-        TweenService:Create(counterKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position = UDim2.new(1, -23, 0, 2), BackgroundColor3 = Color3.fromRGB(255,255,255)}):Play()
+        TweenService:Create(toggleCounterFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
+            BackgroundColor3 = Color3.fromRGB(150, 80, 255)
+        }):Play()
+        TweenService:Create(counterKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
+            Position = UDim2.new(1, -23, 0, 2),
+            BackgroundColor3 = Color3.fromRGB(255,255,255)
+        }):Play()
     else
-        TweenService:Create(toggleCounterFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundColor3 = Color3.fromRGB(60, 60, 80)}):Play()
-        TweenService:Create(counterKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position = UDim2.new(0, 2, 0, 2), BackgroundColor3 = Color3.fromRGB(200,200,200)}):Play()
+        TweenService:Create(toggleCounterFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
+            BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+        }):Play()
+        TweenService:Create(counterKnob, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {
+            Position = UDim2.new(0, 2, 0, 2),
+            BackgroundColor3 = Color3.fromRGB(200,200,200)
+        }):Play()
     end
 end
 
@@ -342,7 +352,17 @@ local function hookGameCoinLabel()
             coinRound += gained
         end
         lastAmount = amount
-        coinText.Text = "Round: " .. coinRound .. " | Total: " .. _G.TotalCoinsFarmed
+
+        -- Update GUI
+        if amount >= 40 then
+            coinText.TextColor3 = Color3.fromRGB(255, 0, 0)
+            coinText.Text = "FULL! ("..amount.."/40) | Total: " .. _G.TotalCoinsFarmed .. " - Resetting..."
+            local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then humanoid.Health = 0 end
+        else
+            coinText.TextColor3 = Color3.fromRGB(0, 255, 0)
+            coinText.Text = "Round: " .. coinRound .. " | Total: " .. _G.TotalCoinsFarmed
+        end
     end)
 end
 
@@ -358,4 +378,3 @@ toggleCounterFrame.InputBegan:Connect(function(input)
 end)
 
 setCounterToggle(false) -- mặc định OFF
-
