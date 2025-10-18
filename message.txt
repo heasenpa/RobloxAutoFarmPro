@@ -26,7 +26,7 @@ btnCorner.Parent = toggleButton
 
 -- Menu chính
 local menuFrame = Instance.new("Frame")
-menuFrame.Size = UDim2.new(0, 220, 0, 180)
+menuFrame.Size = UDim2.new(0, 220, 0, 240)
 menuFrame.Position = UDim2.new(0.5, -110, 0.5, -90)
 menuFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 menuFrame.Visible = false
@@ -279,7 +279,7 @@ local function hookGameCoinLabel(label)
         :WaitForChild("Dock")
         :WaitForChild("CoinBags")
         :WaitForChild("Container")
-        :WaitForChild("BeachBall")
+        :WaitForChild("Candy")
         :WaitForChild("CurrencyFrame")
         :WaitForChild("Icon")
         :WaitForChild("Coins")
@@ -332,6 +332,39 @@ timerLabel.TextSize = 16
 timerLabel.Font = Enum.Font.SourceSansBold
 timerLabel.Text = "Time: 00:00:00"
 timerLabel.Parent = menuFrame
+-- ====== COIN PER HOUR (Tốc độ farm trung bình) ======
+local rateLabel = Instance.new("TextLabel")
+rateLabel.Name = "RateLabel"
+rateLabel.Size = UDim2.new(1, -20, 0, 30)
+rateLabel.Position = UDim2.new(0, 10, 0, 170)
+rateLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+rateLabel.BackgroundTransparency = 0.2
+rateLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+rateLabel.TextSize = 16
+rateLabel.Font = Enum.Font.SourceSansBold
+rateLabel.Text = "Rate: 0 / hour"
+rateLabel.Parent = menuFrame
+
+-- Cập nhật tốc độ trung bình mỗi giây
+task.spawn(function()
+    while task.wait(1) do
+        local elapsed = tick() - startTime
+        local hours = elapsed / 3600
+        local total = _G.TotalCoinsFarmed or 0
+        local rate = 0
+        if hours > 0 then
+            rate = total / hours
+        end
+        rateLabel.Text = string.format("Rate: %.1f / hour", rate)
+        if rate < 100 then
+            rateLabel.TextColor3 = Color3.fromRGB(255, 200, 0)
+        elseif rate < 300 then
+            rateLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+        else
+            rateLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+        end
+    end
+end)
 
 -- Hàm cập nhật thời gian dạng HH.MM.SS
 task.spawn(function()
@@ -349,7 +382,3 @@ LocalPlayer.CharacterAdded:Connect(function()
     local label = setupCoinGUI()
     hookGameCoinLabel(label)
 end)
-
-
-
-
