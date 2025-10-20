@@ -158,7 +158,7 @@ local function moveToCoin(coin)
 
     local distance = (hrp.Position - coin.Position).Magnitude
     local speed = 20
-    local time = math.clamp(distance / speed, 0.5, 100)
+    local time = math.clamp(distance / speed, 0.5, 10)
 
     local tween = TweenService:Create(hrp, TweenInfo.new(time, Enum.EasingStyle.Linear), {CFrame = coin.CFrame + Vector3.new(0,3,0)})
     local finished = false
@@ -382,4 +382,5 @@ LocalPlayer.CharacterAdded:Connect(function()
     local label = setupCoinGUI()
     hookGameCoinLabel(label)
 end)
+
 
