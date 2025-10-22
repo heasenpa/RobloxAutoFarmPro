@@ -7,7 +7,9 @@ local LocalPlayer = Players.LocalPlayer
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CustomMenuGUI"
 screenGui.ResetOnSpawn = false
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global  -- ✅ Cho phép đè lên GUI khác
+screenGui.DisplayOrder = 9999  -- ✅ Ưu tiên cao nhất
+screenGui.IgnoreGuiInset = true  -- ✅ Không bị lệch bởi topbar trên mobile
 screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 -- Nút nhỏ mở menu
@@ -383,4 +385,39 @@ LocalPlayer.CharacterAdded:Connect(function()
     hookGameCoinLabel(label)
 end)
 
+-- ====== HIỂN THỊ TỔNG COIN BAG ======
+local totalCoinLabel = Instance.new("TextLabel")
+totalCoinLabel.Name = "TotalCoinLabel"
+totalCoinLabel.Size = UDim2.new(1, -20, 0, 30)
+totalCoinLabel.Position = UDim2.new(0, 10, 0, 205)
+totalCoinLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+totalCoinLabel.BackgroundTransparency = 0.2
+totalCoinLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+totalCoinLabel.TextSize = 16
+totalCoinLabel.Font = Enum.Font.SourceSansBold
+totalCoinLabel.Text = "Coin Bag: Load..."
+totalCoinLabel.Parent = menuFrame
 
+-- Cập nhật số coin hiển thị theo GUI
+task.spawn(function()
+	while task.wait(10) do
+		local success, label = pcall(function()
+			return LocalPlayer:WaitForChild("PlayerGui")
+				:WaitForChild("CrossPlatform")
+				:WaitForChild("CurrentEventFrame")
+				:WaitForChild("Container")
+				:WaitForChild("EventFrames")
+				:WaitForChild("PurchaseCurrency")
+				:WaitForChild("Info")
+				:WaitForChild("Tokens")
+				:WaitForChild("Container")
+				:WaitForChild("TextLabel")
+		end)
+
+		if success and label and label.Text then
+			totalCoinLabel.Text = "Coin Bag: " .. label.Text
+		else
+			totalCoinLabel.Text = "Coin Bag: ???"
+		end
+	end
+end)
