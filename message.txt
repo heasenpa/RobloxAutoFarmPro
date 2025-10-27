@@ -17,10 +17,17 @@ local toggleButton = Instance.new("ImageButton")
 toggleButton.Size = UDim2.new(0, 50, 0, 50)
 toggleButton.Position = UDim2.new(0.5, -25, 0.5, -25)
 toggleButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-toggleButton.Image = "rbxassetid://125193097642816"
-toggleButton.ImageRectOffset = Vector2.new(4, 836)
-toggleButton.ImageRectSize = Vector2.new(36, 36)
+toggleButton.Image = "rbxassetid://98183807650041"
+toggleButton.ImageRectOffset = Vector2.new(0, 0)
+toggleButton.ImageRectSize = Vector2.new(0, 0)
+toggleButton.BackgroundTransparency = 1
 toggleButton.Parent = screenGui
+-- Viền tím cho nút nhỏ
+local buttonStroke = Instance.new("UIStroke")
+buttonStroke.Thickness = 3
+buttonStroke.Color = Color3.fromRGB(120, 0, 255)  -- tím cùng tone với menu
+buttonStroke.Transparency = 0
+buttonStroke.Parent = toggleButton
 
 local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 8)
@@ -421,5 +428,6 @@ task.spawn(function()
 		end
 	end
 end)
+
 
 
