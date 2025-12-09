@@ -288,7 +288,7 @@ local function hookGameCoinLabel(label)
         :WaitForChild("Dock")
         :WaitForChild("CoinBags")
         :WaitForChild("Container")
-        :WaitForChild("Candy")
+        :WaitForChild("Coin")
         :WaitForChild("CurrencyFrame")
         :WaitForChild("Icon")
         :WaitForChild("Coins")
@@ -411,14 +411,14 @@ task.spawn(function()
 		local success, label = pcall(function()
 			return LocalPlayer:WaitForChild("PlayerGui")
 				:WaitForChild("CrossPlatform")
-				:WaitForChild("CurrentEventFrame")
+				:WaitForChild("Shop")
+				:WaitForChild("Small")
 				:WaitForChild("Container")
-				:WaitForChild("EventFrames")
-				:WaitForChild("PurchaseCurrency")
-				:WaitForChild("Info")
-				:WaitForChild("Tokens")
+				:WaitForChild("Title")
 				:WaitForChild("Container")
-				:WaitForChild("TextLabel")
+				:WaitForChild("Coins")
+				:WaitForChild("Container")
+				:WaitForChild("Amount")
 		end)
 
 		if success and label and label.Text then
@@ -428,6 +428,7 @@ task.spawn(function()
 		end
 	end
 end)
+
 
 
 
