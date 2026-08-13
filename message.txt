@@ -4,7 +4,7 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 -- ====== MENU GUI ======
-local CoreGui = Instance.new("CoreGui")
+local ScreenGui = Instance.new("ScreenGui")
 screenGui.Name = "CustomMenuGUI"
 screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global  -- ✅ Cho phép đè lên GUI khác
@@ -39,7 +39,7 @@ menuFrame.Size = UDim2.new(0, 220, 0, 240)
 menuFrame.Position = UDim2.new(0.5, -110, 0.5, -90)
 menuFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 menuFrame.Visible = false
-menuFrame.Parent = CoreGui
+menuFrame.Parent = ScreenGui
 
 local menuCorner = Instance.new("UICorner")
 menuCorner.CornerRadius = UDim.new(0, 12)
