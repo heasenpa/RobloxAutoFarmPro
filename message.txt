@@ -21,7 +21,7 @@ toggleButton.Image = "rbxassetid://98183807650041"
 toggleButton.ImageRectOffset = Vector2.new(0, 0)
 toggleButton.ImageRectSize = Vector2.new(0, 0)
 toggleButton.BackgroundTransparency = 1
-toggleButton.Parent = screenGui
+toggleButton.Parent = ScreenGui
 -- Viền tím cho nút nhỏ
 local buttonStroke = Instance.new("UIStroke")
 buttonStroke.Thickness = 3
